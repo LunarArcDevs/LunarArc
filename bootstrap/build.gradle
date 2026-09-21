@@ -26,9 +26,6 @@ dependencies {
     implementation libs.bungeecord.chat.api
 
     implementation libs.sqlite.jdbc
-    // Real Paper/Spigot bundle a MySQL driver by default since it's such a common plugin
-    // dependency (economy/data plugins especially). This was declared in the version catalog
-    // but never actually applied anywhere — genuinely unused until now.
     implementation libs.mysql.connector.j
     implementation libs.gson
     implementation libs.snakeyaml
@@ -88,9 +85,6 @@ tasks.register('generateVersions') {
         props['buildName']       = libs.versions.build.name.get()
         props['javaVersion']     = libs.versions.java.runtime.get()
         props['buildDate']       = new java.text.SimpleDateFormat('dd-MM-yyyy HH:mm').format(new Date())
-        // Recorded so a log or a crash report identifies the exact source it was built from. A
-        // report that says only "LunarArc" cannot be matched to a commit, which is most of what a
-        // bug report from a stranger needs to be actionable.
         props['gitHash']         = rootProject.ext.gitHash
         props['gitBranch']       = rootProject.ext.gitBranch
         versionsTarget.text = ''
@@ -121,10 +115,6 @@ def createFatJar(String platform) {
     ]
     def platformProject = project(platformProjectMap[platform])
 
-    // Resolved lazily, inside each task's own configuration block, rather than once here: these
-    // are Architectury/Loom tasks from a sibling project, and looking them up eagerly at script
-    // evaluation time (rather than when Gradle actually configures a task that needs them) hit
-    // "A dependency must not be empty" - some of them aren't registered yet at that point.
     def resolvePlatformJarTask = {
         def t = platformProject.tasks.findByName('remapJar')
         if (t == null || !t.enabled) t = platformProject.tasks.findByName('jar')
@@ -135,27 +125,8 @@ def createFatJar(String platform) {
         : "transformProduction${platform.capitalize()}"
     def resolveCommonJarTask = { project(':lunararc-common').tasks.findByName(commonTaskName) }
 
-    // transformProduction* is Architectury's bytecode transformer, and its output is still in
-    // the named (Mojang) namespace - Loom's remapJar, in the platform project, is what puts
-    // classes into the loader's namespace. Only NeoForge runs on Mojang names at runtime, so
-    // only there is the transformer output already the right thing to ship.
     boolean commonRemappedIntoPlatformJar = platform != 'neoforge'
 
-    // NeoForge 21.1.250 / FML 4.0.44 has no locator that scans the classpath for an arbitrary
-    // jar's mods.toml - confirmed by reading a real debug.log's locator discovery list (only the
-    // production server provider, the neoforge jar's own PathBasedLocator, ModsFolderLocator, and
-    // MavenDirectoryLocator exist), and by reading FML's real ServiceLoaderUtil source. A jar
-    // living outside mods/ is invisible to it unless something registers a locator - Forge has the
-    // equivalent IModLocator SPI - so the launched jar carries only that locator (which must stay
-    // reachable on the classpath before mod discovery runs), and the mod itself lives exclusively
-    // in the extracted common.jar the locator points at. Confirmed against FML's real
-    // JarModsDotTomlModFileReader/ModJarMetadata source: the resulting module's packages come
-    // solely from the target path's own content, nothing from whichever module hosts the locator
-    // class, so common.jar only needs to exclude the locator's own subpackage (below) to stay
-    // clear of it - no module-graph surgery needed. Fabric/Quilt's own discovery never scans the
-    // whole classpath this way (only mods/ and an explicit addMods path), so they don't need this
-    // split for correctness - only for consistency, since fabric.addMods/loader.addMods already
-    // points at the extracted jar too.
     boolean splitModFile = platform == 'neoforge' || platform == 'forge'
 
     tasks.register("${platform}CommonJar", Jar) {
@@ -166,16 +137,9 @@ def createFatJar(String platform) {
 
         archiveBaseName.set("${rootProject.name.toLowerCase(Locale.ROOT).replaceAll('[^a-z0-9._-]+', '-')}-${platform}-common")
         archiveVersion.set(project.version.toString())
-        // neoforge.mods.toml/mods.toml (packaged into this jar below) declare
-        // version="${file.jarVersion}" - NeoForge/Forge resolve that placeholder from the
-        // Implementation-Version of the jar's OWN manifest, not the outer jar's. Without this,
-        // the mod list shows "0.0NONE" instead of the real version.
         manifest {
             attributes('Implementation-Version': project.version)
         }
-        // Never a standalone artifact - only ever consumed nested inside ${platform}Jar as
-        // common.jar - so it lives away from build/libs to avoid looking like a second
-        // shippable product sitting next to the real one.
         destinationDirectory.set(layout.buildDirectory.dir('common-jars'))
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         dependsOn commonJarTask, platformJarTask, commonResources, platformResources
@@ -210,10 +174,6 @@ def createFatJar(String platform) {
                 exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
             }
         } else {
-            // Fabric/Quilt: no discovery-collision risk to guard against, so this is simply a
-            // full duplicate of the already-remapped platform jar, packaged the same way
-            // neoforge/forge are for consistency (and because fabric.addMods/loader.addMods
-            // already points the loader at this exact extracted jar).
             from(zipTree(platformJarTask.outputs.files.singleFile)) {
                 exclude 'META-INF/MANIFEST.MF'
                 exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
@@ -224,20 +184,7 @@ def createFatJar(String platform) {
             exclude 'mixins.lunararc.common.json'
             exclude 'mixins.lunararc.common.refmap.json'
         }
-        // Unfiltered on purpose except for this one entry: platformProject's own resources are
-        // otherwise exactly what common.jar is supposed to carry (its own mixin config, mod
-        // metadata, etc.) - but its locator's META-INF/services registration still names a class
-        // that (correctly) never ships in common.jar. A ModuleDescriptor built via
-        // ModuleDescriptor.Builder.provides(...) - which JPMS's automatic-module machinery uses
-        // for every META-INF/services entry a jar carries - adds the provider class's OWN PACKAGE
-        // to that module regardless of whether the class file is actually present, so this one
-        // leftover text file alone was enough to make common.jar's module claim
-        // io.lunararcdevs.lunararc.${platform}.mod - the exact package lunararc-core.jar (which
-        // hosts the real locator class) also claims - producing a split-package resolution failure
-        // that had nothing to do with any class file, JPMS boot-layer merging, or FML internals.
-        // Confirmed directly: ModuleDescriptor.Builder.provides() auto-adding the providers'
-        // package is real, observable behavior (verified against the actual securejarhandler
-        // library this project depends on), not a guess.
+
         from(platformProject.sourceSets.main.output.resourcesDir) {
             if (platform == 'neoforge') {
                 exclude 'META-INF/services/net.neoforged.neoforgespi.locating.IModFileCandidateLocator'
@@ -246,28 +193,6 @@ def createFatJar(String platform) {
             }
         }
 
-        // paper-api is an interfaces-only jar (org.bukkit.plugin.PluginManager, RegistryAccess,
-        // ServerBuildInfo and friends) - lunararc-common implements the REAL classes for some of
-        // those same packages (SimplePluginManager, JavaPluginLoader, LunarArcRegistryAccess...),
-        // and those real classes live in this jar, not the outer one. A real NeoForge boot proved
-        // why both halves have to live in the same module: Mixin failed with "ClassNotFoundException:
-        // org.bukkit.plugin.PluginManager" transforming Entity, because the outer jar's own paper-api
-        // flatten step (further down) excludes anything whose package also appears in this jar -
-        // correctly avoiding a split-package error between the outer jar and this one - which left
-        // the *interface* half of org.bukkit.plugin owned by neither module.
-        // This is NOT splitModFile-only: a real Quilt boot proved Fabric/Quilt need it too, for a
-        // different reason. Knot only runs Mixin transforms on classes loaded through its own mod
-        // classpath (this jar, extracted and added via loader.addMods/fabric.addMods) - a class
-        // reachable only from the outer (non-mod) jar falls back to the plain system AppClassLoader,
-        // which never asks Knot for anything and so never sees the transformed bytecode. With
-        // paper-api split (some classes here, the rest in the outer jar), RegistryAccessMixin's
-        // @Overwrite on RegistryAccess.registryAccess() silently never applied - the crash trace
-        // still showed paper-api's own real RegistryAccessHolder/ServiceLoader code running,
-        // proving the untouched, un-mixed copy was what actually got loaded. Packaging the whole of
-        // paper-api directly into this jar (never partially split) keeps every interface, its
-        // lunararc-common implementation, and any mixin targeting it in the same module/classloader
-        // scope for all four loaders, and the outer jar's existing exclude already keeps its own
-        // copy out once this jar's package set covers all of it.
         from(zipTree(project.configurations.paperApiJar.singleFile)) {
             exclude 'META-INF/**'
         }
@@ -320,7 +245,9 @@ def createFatJar(String platform) {
             java.nio.file.Files.move(repaired.toPath(), output.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         }
 
-        relocate 'org.apache.maven',         'io.lunararcdevs.lunararc.libs.maven.core'
+        relocate('org.apache.maven', 'io.lunararcdevs.lunararc.libs.maven.core') {
+            exclude 'org/apache/maven/artifact/versioning/**'
+        }
         relocate 'org.codehaus.plexus',      'io.lunararcdevs.lunararc.libs.maven.plexus'
         relocate 'org.eclipse.sisu',         'io.lunararcdevs.lunararc.libs.maven.sisu'
         relocate 'javax.inject',             'io.lunararcdevs.lunararc.libs.maven.inject'
@@ -334,10 +261,6 @@ def createFatJar(String platform) {
         def platformResources = platformProject.tasks.named('processResources')
         def bootstrapResources = tasks.named('processResources')
 
-        // The mod metadata files are templates - fabric.mod.json and quilt.mod.json carry
-        // ${version}, ${minecraft} and friends - and only processResources expands them. Depending
-        // on the processResources tasks, and copying from their output below rather than from the
-        // source directories, is what makes the shipped jar carry real values.
         dependsOn commonJarTask, platformJarTask, 'generateVersions',
                 commonResources, platformResources, bootstrapResources,
                 tasks.named("${platform}CommonJar")
@@ -346,22 +269,6 @@ def createFatJar(String platform) {
             rename { 'common.jar' }
         }
 
-        // Architectury's loom merges lunararc-common's own compiled output (not just
-        // io/lunararcdevs/lunararc/** - also whatever CraftBukkit-surface packages it implements
-        // directly, like org/bukkit/plugin/**) straight into each platform project's own
-        // jar/remapJar output. JPMS forbids two modules exporting the same PACKAGE at all - not just
-        // the same class - so even though the outer jar's org/bukkit/plugin/*.class files and
-        // common.jar's org/bukkit/plugin/SimplePluginManager.class don't share a single filename,
-        // both jars claiming the org.bukkit.plugin package is exactly what blew up the instant a
-        // real plugin's own module read both of them ("Modules ... export package org.bukkit.plugin
-        // to module jadeaddons"). Rather than hand-naming every such package, exclude from the outer
-        // jar any class whose package also appears anywhere in common.jar's own real content - the
-        // two are built from the same archiveFile a few lines up, so this is authoritative.
-        // Shadow's relocate rules (declared above) rewrite these source packages into
-        // io/lunararcdevs/lunararc/libs/** on their way into the outer jar - common.jar can never
-        // contain that synthetic namespace (it's a plain, non-relocating Jar task), so a path here
-        // matching something in common.jar's own (always un-relocated) copy is not a real conflict:
-        // by the time this jar is finished building, the two land in genuinely different packages.
         List<String> relocatedSourcePrefixes = [
             'org/apache/maven/', 'org/codehaus/plexus/', 'javax/inject/',
             'org/eclipse/sisu/', 'org/apache/http/', 'org/apache/commons/codec/',
@@ -407,10 +314,6 @@ def createFatJar(String platform) {
                 include "io/lunararcdevs/lunararc/${platform}/mod/**"
             }
         } else if (commonRemappedIntoPlatformJar) {
-            // Fabric/Quilt discover their mod entirely through fabric.addMods/loader.addMods
-            // pointing at the extracted common.jar (see FabricLauncher/QuiltLauncher) - unlike
-            // NeoForge/Forge there's no default classpath-scanning locator to satisfy here, so
-            // nothing lunararc-owned needs to also sit in the launched jar itself.
             from(zipTree(platformJarTask.outputs.files.singleFile)) {
                 exclude 'io/lunararcdevs/lunararc/**'
                 exclude 'mixins.lunararc.common.json'
@@ -425,6 +328,7 @@ def createFatJar(String platform) {
         }
 
         from project(':installer').sourceSets.main.output
+        from project(':installer').sourceSets.entry.output
         from { zipTree(project.configurations.lunararcApiJar.singleFile) }
         from project(':i18n-config').sourceSets.main.output
         from sourceSets.main.output.resourcesDir
@@ -491,13 +395,6 @@ def createFatJar(String platform) {
                 from(zipTree(artifact.file)) {
                     exclude 'META-INF/MANIFEST.MF'
                     exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
-                    // paper-api declares the org.bukkit.plugin (and .java) packages as plain API
-                    // interfaces; lunararc-common implements real classes in those same packages
-                    // (SimplePluginManager, JavaPluginLoader, PluginClassLoader, LunarArcRegistryAccess...)
-                    // that now ship inside common.jar for every loader (see the paper-api pull into
-                    // common.jar above - no longer splitModFile-only). Naming individual classes here
-                    // isn't enough - exclude by package, same as the platformJarTask pull above, so no
-                    // copy of paper-api survives in the outer jar anywhere it's also in common.jar.
                     exclude { FileTreeElement fte -> !fte.directory && isCommonJarPackage(fte.relativePath.pathString) }
                 }
             } else {
@@ -513,7 +410,7 @@ def createFatJar(String platform) {
 
         manifest {
             attributes(
-                'Main-Class':              'io.lunararcdevs.lunararc.launcher.Launcher',
+                'Main-Class':              'io.lunararcdevs.lunararc.launcher.LauncherEntry',
                 'Premain-Class':           'io.lunararcdevs.lunararc.launcher.LunarArcAgent',
                 'Can-Retransform-Classes': 'true',
                 'Can-Append-To-Class-Path': 'true',
@@ -568,9 +465,6 @@ def createFatJar(String platform) {
                 }
             }
 
-            // The CraftBukkit/bridge classes and the loader metadata now live inside the nested
-            // common.jar (see splitModFile in createFatJar) rather than as direct entries of the
-            // launched jar, so every check below has to see inside it too.
             new java.util.jar.JarFile(hybridJar).withCloseable { jar ->
                 scanJarEntries(jar, outerEntries)
                 def commonEntry = jar.getEntry('common.jar')
@@ -650,24 +544,6 @@ def createFatJar(String platform) {
             if (!missingLunarArcRuntimeResources.isEmpty()) {
                 throw new GradleException("${platform} hybrid JAR is missing LunarArc runtime resources: ${missingLunarArcRuntimeResources}")
             }
-
-            // Two checks against faults that are invisible until the server is running.
-            //
-            // A loader whose metadata does not name mixins.lunararc.common.json applies none of the
-            // common layer, so the server boots normally and simply has no Bukkit in it and loads no
-            // plugins. That was true of Forge before, and nothing in the build noticed - entries (the
-            // union of the outer jar and the nested common.jar) was satisfied by whichever one had it,
-            // regardless of whether that is the one the loader actually reads from. All four platforms
-            // discover this mod from the nested common.jar - NeoForge/Forge via the custom
-            // IModFileCandidateLocator/IModLocator pointing at the extracted copy of it (confirmed
-            // against a real debug.log: neither loader has any built-in locator that would find a mod
-            // sitting directly in the outer jar), Fabric/Quilt via fabric.addMods/loader.addMods
-            // pointing at that same extracted copy - so the check requires both the metadata and the
-            // mixin config to be found specifically in common.jar, not just anywhere in their union.
-            //
-            // And metadata copied from src/main/resources rather than the processResources output
-            // still holds its ${...} placeholders, which Fabric reports as a version conflict
-            // against a version string that is a literal placeholder.
             String metadataEntry = [
                 neoforge: 'META-INF/neoforge.mods.toml',
                 forge:    'META-INF/mods.toml',

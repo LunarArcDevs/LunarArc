@@ -15,7 +15,7 @@ public class NeoForgeInstaller {
                 neoforgeVersion, neoforgeVersion);
 
         if (!Files.exists(installerJar)) {
-            ConsoleUI.printStep("Downloading missing libraries...");
+            ConsoleUI.printStep("install.downloading_libraries");
             Downloader.download(url, installerJar);
         }
 
@@ -25,13 +25,13 @@ public class NeoForgeInstaller {
 
         if (Files.exists(versionSentinel)) {
             String installedVersion = Files.readString(versionSentinel).trim();
-            if (installedVersion.equals(neoforgeVersion)) {
+            if (installedVersion.equals(neoforgeVersion) && installIntact(libDir, neoforgeVersion)) {
                 needsInstall = false;
             }
         }
 
         if (needsInstall) {
-            ConsoleUI.printStep("NeoForge installation is starting, please wait...");
+            ConsoleUI.printStep("install.neoforge.starting");
 
             ProcessBuilder pb = new ProcessBuilder(
                     LauncherUtils.getJavaExecutable(), "-jar", installerJar.toAbsolutePath().toString(),
@@ -41,12 +41,28 @@ public class NeoForgeInstaller {
             int exitCode = process.waitFor();
 
             if (exitCode != 0) {
-                ConsoleUI.printError("NeoForge installer failed with exit code: " + exitCode);
+                ConsoleUI.printError("install.neoforge.failed_exit_code", exitCode);
                 return;
             }
             Files.writeString(versionSentinel, neoforgeVersion);
         }
 
         NeoForgeLauncher.launch(workingDir, selfPath);
+    }
+
+    private static boolean installIntact(Path libDir, String neoforgeVersion) throws Exception {
+        Path argsFile = LauncherUtils.findArgsFile(
+                libDir, "net/neoforged/neoforge/" + neoforgeVersion, false);
+        if (argsFile == null) {
+            ConsoleUI.printStep("install.neoforge.reinstall_missing_args", neoforgeVersion);
+            return false;
+        }
+
+        String missingJar = LauncherUtils.missingLaunchJar(LauncherUtils.readArgsFileTokens(argsFile));
+        if (missingJar != null) {
+            ConsoleUI.printStep("install.neoforge.reinstall_missing_jar", neoforgeVersion, missingJar);
+            return false;
+        }
+        return true;
     }
 }

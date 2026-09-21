@@ -151,8 +151,8 @@ public class CraftAttributeInstance implements org.bukkit.attribute.AttributeIns
 
     public static Object toMinecraft(AttributeModifier modifier) {
         try {
-            Class<?> nmsClass = Class.forName("net.minecraft.world.entity.ai.attributes.AttributeModifier");
-            Class<?> operationClass = Class.forName("net.minecraft.world.entity.ai.attributes.AttributeModifier$Operation");
+            Class<?> nmsClass = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.world.entity.ai.attributes.AttributeModifier");
+            Class<?> operationClass = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.world.entity.ai.attributes.AttributeModifier$Operation");
             Object operation = Enum.valueOf((Class) operationClass, switch (modifier.getOperation()) {
                 case ADD_NUMBER -> "ADD_VALUE";
                 case ADD_SCALAR -> "ADD_MULTIPLIED_BASE";
@@ -191,7 +191,7 @@ public class CraftAttributeInstance implements org.bukkit.attribute.AttributeIns
     }
 
     private static Object resourceLocation(String key) throws ReflectiveOperationException {
-        Class<?> resourceLocation = Class.forName("net.minecraft.resources.ResourceLocation");
+        Class<?> resourceLocation = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.resources.ResourceLocation");
         try {
             return resourceLocation.getMethod("parse", String.class).invoke(null, key);
         } catch (NoSuchMethodException ignored) {

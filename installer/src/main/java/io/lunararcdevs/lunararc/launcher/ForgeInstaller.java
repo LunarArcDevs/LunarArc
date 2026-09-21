@@ -14,7 +14,7 @@ public class ForgeInstaller {
                 forgeVersion, mcVersion, forgeVersion);
 
         if (!Files.exists(installerJar)) {
-            ConsoleUI.printStep("Downloading missing libraries...");
+            ConsoleUI.printStep("install.downloading_libraries");
             Downloader.download(url, installerJar);
         }
 
@@ -30,7 +30,7 @@ public class ForgeInstaller {
         }
 
         if (needsInstall) {
-            ConsoleUI.printStep("Forge installation is starting, please wait...");
+            ConsoleUI.printStep("install.forge.starting");
 
             ProcessBuilder pb = new ProcessBuilder(
                     LauncherUtils.getJavaExecutable(), "-jar", installerJar.toAbsolutePath().toString(), "--installServer");
@@ -39,7 +39,7 @@ public class ForgeInstaller {
             int exitCode = process.waitFor();
 
             if (exitCode != 0) {
-                ConsoleUI.printError("Forge installer failed with exit code: " + exitCode);
+                ConsoleUI.printError("install.forge.failed_exit_code", exitCode);
                 return;
             }
             Files.writeString(versionSentinel, forgeVersion);
@@ -52,15 +52,13 @@ public class ForgeInstaller {
         Path argsFile = LauncherUtils.findArgsFile(
                 libDir, "net/minecraftforge/forge/" + mcVersion + "-" + forgeVersion, false);
         if (argsFile == null) {
-            ConsoleUI.printStep("Forge " + forgeVersion + " is recorded as installed, but its launch "
-                    + "arguments are missing. Installing again...");
+            ConsoleUI.printStep("install.forge.reinstall_missing_args", forgeVersion);
             return false;
         }
 
         String missingJar = LauncherUtils.missingLaunchJar(LauncherUtils.readArgsFileTokens(argsFile));
         if (missingJar != null) {
-            ConsoleUI.printStep("Forge " + forgeVersion + " is recorded as installed, but " + missingJar
-                    + " is missing. Installing again...");
+            ConsoleUI.printStep("install.forge.reinstall_missing_jar", forgeVersion, missingJar);
             return false;
         }
         return true;

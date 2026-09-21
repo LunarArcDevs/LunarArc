@@ -18,7 +18,6 @@ import java.util.Properties;
 public final class UpdateChecker {
     private static final String REPO = "LunarArcDevs/LunarArc";
     private static final String API_URL = "https://api.github.com/repos/" + REPO + "/releases";
-    private static final String NO_UPDATE_MESSAGE = "No new updates available, You're up to date";
     private static final int CONNECT_TIMEOUT_MILLIS = 3000;
     private static final int READ_TIMEOUT_MILLIS = 3000;
 
@@ -27,10 +26,6 @@ public final class UpdateChecker {
 
     public static String LATEST_VERSION = null;
     public static String UPDATE_URL = null;
-
-    // Written on the probe thread, drained on the launcher thread, so both go through this lock.
-    // The probe must not print directly: it runs while the launcher is writing its own progress,
-    // and interleaved lines from two threads is how a startup log becomes unreadable.
     private static final Object LOCK = new Object();
     private static final java.util.List<String> MESSAGES = new java.util.ArrayList<>();
 
@@ -42,10 +37,18 @@ public final class UpdateChecker {
 
     public static Handle begin(String currentVersion, String buildName) {
         if (!updatesEnabled()) return new Handle(null, null);
+        if (isLocalBuild(currentVersion)) {
+            System.out.println(TranslationManager.get("update.local_build", currentVersion));
+            return new Handle(null, null);
+        }
         Thread thread = new Thread(() -> probe(currentVersion, buildName), "LunarArc-update-check");
         thread.setDaemon(true);
         thread.start();
         return new Handle(thread, currentVersion);
+    }
+
+    private static boolean isLocalBuild(String currentVersion) {
+        return currentVersion != null && currentVersion.endsWith("+local");
     }
 
     /** A running check, and the means to report whatever it found. */
@@ -162,18 +165,21 @@ public final class UpdateChecker {
                 if (!sameVersion(currentVersion, tagName, name, buildName)) {
                     LATEST_VERSION = tagName;
                     UPDATE_URL = htmlUrl;
-                    say(TranslationManager.get("update.available", buildName, tagName, currentVersion));
-                    say(TranslationManager.get("update.download", htmlUrl));
+
+                    if (!alreadyReported(currentVersion, tagName)) {
+                        say(TranslationManager.get("update.available", buildName, tagName, currentVersion));
+                        say(TranslationManager.get("update.download", htmlUrl));
+                    }
                 } else {
                     LATEST_VERSION = null;
                     UPDATE_URL = null;
-                    say(NO_UPDATE_MESSAGE);
+                    say(TranslationManager.get("update.none"));
                 }
                 break;
             }
 
             if (!foundMatch) {
-                say(NO_UPDATE_MESSAGE);
+                say(TranslationManager.get("update.none"));
             }
         } catch (Exception ignored) {
 
@@ -210,6 +216,23 @@ public final class UpdateChecker {
             return "";
         }
         return value.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]", "");
+    }
+
+    /** Whether this exact (current, latest) pairing was already recorded from a previous run - i.e.
+     *  the user has already been shown this update notice at least once and just hasn't acted on it. */
+    private static boolean alreadyReported(String currentVersion, String tagName) {
+        try {
+            Path configPath = Paths.get("lunararc.conf");
+            if (!Files.exists(configPath)) return false;
+            Properties props = new Properties();
+            try (java.io.InputStream in = Files.newInputStream(configPath)) {
+                props.load(in);
+            }
+            return currentVersion.equals(props.getProperty("update.current"))
+                    && tagName.equals(props.getProperty("update.latest"));
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private static void saveUpdateInfo(String current, String latest, String url) {

@@ -89,11 +89,11 @@ public abstract class CraftHumanEntity extends CraftLivingEntity {
             if (value) {
                 int opLevel = server.getServer().getOperatorUserPermissionLevel();
                 boolean bypass = (boolean) playerList.getClass().getMethod("canBypassPlayerLimit", com.mojang.authlib.GameProfile.class).invoke(playerList, getHandle().getGameProfile());
-                Object entry = Class.forName("net.minecraft.server.players.ServerOpListEntry")
+                Object entry = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.server.players.ServerOpListEntry")
                         .getConstructor(com.mojang.authlib.GameProfile.class, int.class, boolean.class)
                         .newInstance(getHandle().getGameProfile(), opLevel, bypass);
                 Object ops = playerList.getClass().getMethod("getOps").invoke(playerList);
-                ops.getClass().getMethod("add", Class.forName("net.minecraft.server.players.StoredUserEntry")).invoke(ops, entry);
+                ops.getClass().getMethod("add", io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.server.players.StoredUserEntry")).invoke(ops, entry);
             } else {
                 Object ops = playerList.getClass().getMethod("getOps").invoke(playerList);
                 ops.getClass().getMethod("remove", Object.class).invoke(ops, getHandle().getGameProfile());

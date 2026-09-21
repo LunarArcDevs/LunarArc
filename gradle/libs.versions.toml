@@ -19,9 +19,10 @@ java-runtime = "21"
 minecraft = "1.21.1"
 parchment = "2024.11.17"
 forge = "52.1.16"
-neoforge = "21.1.250"
+neoforge = "21.1.251"
 fabric-loader = "0.19.5"
 fabric-api = "0.116.17+1.21.1"
+fabric-permissions-api = "0.3.1"
 fabric-installer = "0.11.2"
 quilt-loader = "0.30.1"
 quilt-installer = "0.15.1"
@@ -88,6 +89,7 @@ json-simple = { group = "com.googlecode.json-simple", name = "json-simple", vers
 # platforms (lunararc-forge, lunararc-fabric, lunararc-neoforge, lunararc-quilt)
 neoforge = { group = "net.neoforged", name = "neoforge", version.ref = "neoforge" }
 fabric-api = { group = "net.fabricmc.fabric-api", name = "fabric-api", version.ref = "fabric-api" }
+fabric-permissions-api = { group = "me.lucko", name = "fabric-permissions-api", version.ref = "fabric-permissions-api" }
 quilt-loader = { group = "org.quiltmc", name = "quilt-loader", version.ref = "quilt-loader" }
 
 # installer

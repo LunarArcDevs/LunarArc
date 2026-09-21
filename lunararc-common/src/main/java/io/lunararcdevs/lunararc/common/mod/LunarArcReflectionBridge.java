@@ -3,9 +3,12 @@ package io.lunararcdevs.lunararc.common.mod;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.StackWalker;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 
 public final class LunarArcReflectionBridge {
+    private static final Logger LOGGER = LoggerFactory.getLogger("LunarArc/ReflectionBridge");
     private static final LunarArcRemapper REMAPPER = new LunarArcRemapper(true);
 
     private LunarArcReflectionBridge() {
@@ -24,9 +27,25 @@ public final class LunarArcReflectionBridge {
                         .orElse(Thread.currentThread().getContextClassLoader()));
         if (callerLoader == null) callerLoader = LunarArcReflectionBridge.class.getClassLoader();
         try {
-            return Class.forName(mapped, true, callerLoader);
+            Class<?> resolved = Class.forName(mapped, true, callerLoader);
+            if (io.lunararcdevs.lunararc.common.LunarArcDebug.REFLECT) {
+                io.lunararcdevs.lunararc.common.LunarArcDebug.reflect("forName {} -> {} resolved via {} (from {})",
+                        name, mapped, callerLoader, io.lunararcdevs.lunararc.common.LunarArcDebug.caller());
+            }
+            return resolved;
         } catch (ClassNotFoundException first) {
-            if (!mapped.equals(name)) return Class.forName(name, true, callerLoader);
+            if (!mapped.equals(name)) {
+                try {
+                    return Class.forName(name, true, callerLoader);
+                } catch (ClassNotFoundException second) {
+                    LOGGER.warn("Class.forName failed for both mapped name '{}' and original name '{}' "
+                                    + "using classloader {} (caller {})", mapped, name, callerLoader,
+                            io.lunararcdevs.lunararc.common.LunarArcDebug.caller());
+                    throw second;
+                }
+            }
+            LOGGER.warn("Class.forName failed for '{}' (unmapped == input) using classloader {} (caller {})",
+                    name, callerLoader, io.lunararcdevs.lunararc.common.LunarArcDebug.caller());
             throw first;
         }
     }
@@ -50,6 +69,19 @@ public final class LunarArcReflectionBridge {
             if (!mapped.equals(name)) return loader.loadClass(name);
             throw first;
         }
+    }
+
+    /**
+     * Redirect target for a plugin's own {@code Field.getName()} call on a Field it obtained via a raw
+     * {@code getDeclaredFields()} scan (a legacy NMS-reflection pattern that bypasses every hooked
+     * reflective API in this class) - see LunarArcRemapper.mapRuntimeMemberDisplayName.
+     */
+    public static String fieldName(Field field) {
+        return REMAPPER.mapRuntimeMemberDisplayName(field.getDeclaringClass(), field.getName(), false);
+    }
+
+    public static String methodName(Method method) {
+        return REMAPPER.mapRuntimeMemberDisplayName(method.getDeclaringClass(), method.getName(), true);
     }
 
     public static Field getField(Class<?> owner, String name) throws NoSuchFieldException {
@@ -147,6 +179,77 @@ public final class LunarArcReflectionBridge {
                 try {
                     return owner.getDeclaredMethod(name, parameterTypes);
                 } catch (NoSuchMethodException ignored) {
+                }
+            }
+            throw first;
+        }
+    }
+
+    /**
+     * Redirect target for a plugin's own {@code MethodHandles.Lookup.findGetter/findSetter} call -
+     * these take the field name as a raw string constant, which the ASM class remapper never touches
+     * (it only rewrites symbolic FieldInsnNode/MethodInsnNode references), so this is otherwise
+     * invisible to the remapper exactly like the raw getDeclaredFields() scan fieldName() covers.
+     * ProtocolLib's IdCodecWrapper uses this pattern to grab a private list field by name.
+     */
+    public static java.lang.invoke.MethodHandle findGetter(java.lang.invoke.MethodHandles.Lookup lookup,
+            Class<?> owner, String name, Class<?> type) throws NoSuchFieldException, IllegalAccessException {
+        String mapped = REMAPPER.mapRuntimeFieldName(owner, name);
+        try {
+            return lookup.findGetter(owner, mapped, type);
+        } catch (NoSuchFieldException first) {
+            if (!mapped.equals(name)) {
+                try {
+                    return lookup.findGetter(owner, name, type);
+                } catch (NoSuchFieldException ignored) {
+                }
+            }
+            throw first;
+        }
+    }
+
+    public static java.lang.invoke.MethodHandle findSetter(java.lang.invoke.MethodHandles.Lookup lookup,
+            Class<?> owner, String name, Class<?> type) throws NoSuchFieldException, IllegalAccessException {
+        String mapped = REMAPPER.mapRuntimeFieldName(owner, name);
+        try {
+            return lookup.findSetter(owner, mapped, type);
+        } catch (NoSuchFieldException first) {
+            if (!mapped.equals(name)) {
+                try {
+                    return lookup.findSetter(owner, name, type);
+                } catch (NoSuchFieldException ignored) {
+                }
+            }
+            throw first;
+        }
+    }
+
+    public static java.lang.invoke.MethodHandle findStaticGetter(java.lang.invoke.MethodHandles.Lookup lookup,
+            Class<?> owner, String name, Class<?> type) throws NoSuchFieldException, IllegalAccessException {
+        String mapped = REMAPPER.mapRuntimeFieldName(owner, name);
+        try {
+            return lookup.findStaticGetter(owner, mapped, type);
+        } catch (NoSuchFieldException first) {
+            if (!mapped.equals(name)) {
+                try {
+                    return lookup.findStaticGetter(owner, name, type);
+                } catch (NoSuchFieldException ignored) {
+                }
+            }
+            throw first;
+        }
+    }
+
+    public static java.lang.invoke.MethodHandle findStaticSetter(java.lang.invoke.MethodHandles.Lookup lookup,
+            Class<?> owner, String name, Class<?> type) throws NoSuchFieldException, IllegalAccessException {
+        String mapped = REMAPPER.mapRuntimeFieldName(owner, name);
+        try {
+            return lookup.findStaticSetter(owner, mapped, type);
+        } catch (NoSuchFieldException first) {
+            if (!mapped.equals(name)) {
+                try {
+                    return lookup.findStaticSetter(owner, name, type);
+                } catch (NoSuchFieldException ignored) {
                 }
             }
             throw first;

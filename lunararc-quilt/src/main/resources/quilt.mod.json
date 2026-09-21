@@ -11,7 +11,7 @@
         "LunarArcDevs": "Owner"
       },
       "contact": {
-        "homepage": "https://lunararc.net",
+        "homepage": "https://lunararc.ampznetwork.com",
         "sources": "https://github.com/LunarArcDevs/LunarArc"
       },
       "license": "GPL-3.0-only",
@@ -21,10 +21,6 @@
     "entrypoints": {
       "main": "io.lunararcdevs.lunararc.quilt.LunarArcQuilt"
     },
-    "mixin": [
-      "mixins.lunararc.common.json",
-      "mixins.lunararc.quilt.json"
-    ],
     "depends": [
       {
         "id": "quilt_loader",
@@ -39,5 +35,10 @@
         "versions": "*"
       }
     ]
-  }
+  },
+  "mixin": [
+    "mixins.lunararc.common.json",
+    "mixins.lunararc.quilt.json"
+  ],
+  "access_widener": "lunararc.accesswidener"
 }

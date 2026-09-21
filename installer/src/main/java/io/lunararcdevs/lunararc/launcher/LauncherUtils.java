@@ -185,4 +185,29 @@ public class LauncherUtils {
         }
         return null;
     }
+
+    /**
+     * The first entry in {@code launchJar}'s manifest Class-Path that's missing on disk, or null if
+     * the jar and every entry it references are present - the Fabric/Quilt equivalent of
+     * {@link #missingLaunchJar}, since those loaders' launch jars carry their dependency list in the
+     * manifest rather than an args file.
+     */
+    static String missingManifestClassPathJar(Path launchJar) {
+        if (!Files.isRegularFile(launchJar)) return launchJar.toString();
+        java.util.jar.Manifest manifest;
+        try (java.util.jar.JarFile jarFile = new java.util.jar.JarFile(launchJar.toFile())) {
+            manifest = jarFile.getManifest();
+        } catch (IOException unreadable) {
+            return launchJar.toString();
+        }
+        String classPath = manifest == null ? null
+                : manifest.getMainAttributes().getValue(java.util.jar.Attributes.Name.CLASS_PATH);
+        if (classPath == null || classPath.isBlank()) return null;
+        Path base = launchJar.toAbsolutePath().getParent();
+        for (String entry : classPath.trim().split("\\s+")) {
+            if (entry.isEmpty()) continue;
+            if (!Files.isRegularFile(base.resolve(entry))) return entry;
+        }
+        return null;
+    }
 }

@@ -4,6 +4,7 @@ import io.lunararcdevs.lunararc.common.LunarArcClientSideGuard;
 import io.lunararcdevs.lunararc.common.mod.server.LunarArcServer;
 import io.lunararcdevs.lunararc.quilt.event.QuiltBlockBreakEvents;
 import io.lunararcdevs.lunararc.quilt.network.QuiltChannelRegistration;
+import io.lunararcdevs.lunararc.quilt.permissions.QuiltPermissionsApi;
 import io.lunararcdevs.lunararc.quilt.server.QuiltServerLifecycle;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.ModInitializer;
@@ -26,5 +27,6 @@ public final class LunarArcQuilt implements ModInitializer {
         QuiltServerLifecycle.register();
         QuiltChannelRegistration.register();
         QuiltBlockBreakEvents.register();
+        QuiltPermissionsApi.register();
     }
 }

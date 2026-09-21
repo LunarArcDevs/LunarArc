@@ -32,6 +32,8 @@ dependencies {
     modImplementation libs.quilt.loader
     modImplementation "net.fabricmc:fabric-loader:${libs.versions.fabric.loader.get()}"
     modImplementation libs.fabric.api
+    modImplementation(libs.fabric.permissions.api) { transitive = false }
+    include(libs.fabric.permissions.api) { transitive = false }
     common(project(path: ':lunararc-common', configuration: 'namedElements')) { transitive false }
     shadowCommon(project(path: ':lunararc-common', configuration: 'transformProductionQuilt')) { transitive false }
     implementation libs.lunararc.api

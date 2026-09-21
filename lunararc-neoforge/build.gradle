@@ -26,15 +26,6 @@ dependencies {
     implementation libs.paper.api
 }
 
-// Loom's accessWidenerPath only widens for compilation and the dev runtime. Forge gets the
-// widener at runtime too, because its block sets convertAccessWideners and ships the file;
-// NeoForge had no equivalent, so every "accessible"/"mutable" line was silently absent from the
-// production jar. Plugins that reach a widened member paid for it - TAB died with
-// IllegalAccessError on ServerCommonPacketListenerImpl.connection, a field the widener has
-// listed, with a comment naming TAB, since it was written.
-//
-// NeoForge reads META-INF/accesstransformer.cfg out of the jar, so translate the widener into
-// one at build time rather than maintaining a second hand-written list that drifts.
 def generatedAtDir = layout.buildDirectory.dir('generated/accesstransformer')
 
 tasks.register('generateAccessTransformer') {
@@ -48,20 +39,6 @@ tasks.register('generateAccessTransformer') {
         target.parentFile.mkdirs()
         def lines = ['# Generated from lunararc.accesswidener - do not edit by hand.']
         def dotted = { String internal -> internal.replace('/', '.') }
-
-        // NeoForge's ReplaceFieldWithGetterAccess coremod rewrites reads of these fields into
-        // calls to the matching getModified* getter, which is how the biome modifier system gets
-        // to return a modified value. It asserts the field is still private and instance, and
-        // aborts class transformation if it is not - so widening one here kills the server during
-        // BuiltInRegistries bootstrap, before anything else loads:
-        //
-        //   IllegalStateException: Field climateSettings in net/minecraft/world/level/biome/Biome
-        //   is not private and an instance field
-        //
-        // The widener entry is there for compiling lunararc-common against vanilla; at runtime on
-        // this loader the coremod already provides the access, and CraftWorldMixin_NeoForge
-        // redirects our own call site to getModifiedClimateSettings(). So these belong in the
-        // widener and not in the transformer.
         def coremodOwnedFields = [
                 'net/minecraft/world/level/biome/Biome climateSettings',
                 'net/minecraft/world/level/biome/Biome specialEffects',
@@ -98,8 +75,6 @@ tasks.register('generateAccessTransformer') {
             }
         }
 
-        // A field listed both accessible and mutable yields two rows; public-f must win, and a
-        // duplicate row would otherwise have the AT engine apply the weaker one after it.
         def byMember = [:]
         def header = lines.remove(0)
         lines.each { String entry ->

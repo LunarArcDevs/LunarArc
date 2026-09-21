@@ -18,12 +18,6 @@ public final class LunarArcBukkitPermissions {
         return Optional.of(player.hasPermission(permission));
     }
 
-    /**
-     * Compatibility helper for loader integrations that only accept a boolean result.
-     * Online explicit Bukkit permissions win; otherwise the supplied default is used for online
-     * players and operator state is used for offline players, matching LunarArc's existing
-     * Forge/Fabric/Quilt behaviour.
-     */
     public static boolean hasPermission(UUID playerId, String permission, boolean defaultValue) {
         Optional<Boolean> explicit = explicitOnlinePermission(playerId, permission);
         if (explicit.isPresent()) return explicit.get();

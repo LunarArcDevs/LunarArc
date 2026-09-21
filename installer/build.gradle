@@ -3,6 +3,16 @@ plugins {
     id 'java-library'
 }
 
+sourceSets {
+    entry {
+        java.srcDir 'src/entry/java'
+    }
+}
+
+tasks.named('compileEntryJava') {
+    options.release = 8
+}
+
 dependencies {
     implementation libs.lunararc.api
     implementation project(':i18n-config')

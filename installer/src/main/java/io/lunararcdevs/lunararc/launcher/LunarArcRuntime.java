@@ -44,15 +44,6 @@ public final class LunarArcRuntime {
         Files.createDirectories(layout.downloads());
         Files.createDirectories(layout.state());
 
-        // A prior crash or killed process can leave a truncated jar behind - under .lunararc
-        // (the core runtime jar, the extracted mod_file, resolved plugin libraries) and under
-        // the separate top-level libraries/ directory MavenLibraryResolver uses as its Maven
-        // local repository. Neither location is otherwise re-validated once a file exists there,
-        // so a corrupt one would sit there being used until it fails at open (a plugin
-        // ClassNotFoundError, or the runtime classes never getting extracted). Removing corrupt
-        // jars up front lets the normal repair path handle each: the core-jar check below
-        // rebuilds runtime/classes once it finds the jar missing, and Maven simply re-downloads
-        // a library it can no longer find in its local repository.
         repairCorruptJars(root);
         repairCorruptJars(workingDir.resolve("libraries"));
 
@@ -61,8 +52,6 @@ public final class LunarArcRuntime {
         Path runtimeMarker = layout.runtimeClasses().resolve(".lunararc-runtime.sha256");
 
         String fingerprint = fingerprint(selfJar);
-        // An empty fingerprint means the jar could not be stat'd, so it matches nothing - including
-        // an empty one that an earlier failed start may have recorded.
         String sourceHash = !fingerprint.isEmpty() && fingerprint.equals(state.getProperty("core.fingerprint"))
                 ? state.getProperty("core.sha256", "")
                 : "";

@@ -184,7 +184,9 @@ public class CraftServer implements Server {
 
         this.consoleSender = new CraftConsoleCommandSender(console);
 
-        io.lunararcdevs.lunararc.common.mod.util.log.LunarArcConsole.success(logger, "CraftServer initialized: " + getName() + " version " + getVersion() + " (Bukkit: " + getBukkitVersion() + ")");
+        io.lunararcdevs.lunararc.common.mod.util.log.LunarArcConsole.success(logger, "CraftServer initialized: "
+                + io.lunararcdevs.lunararc.common.server.LunarArcVersionInfo.projectName() + " version " + getVersion()
+                + " (Bukkit: " + getBukkitVersion() + ")");
 
         this.simplePluginManager.registerInterface(io.lunararcdevs.lunararc.common.server.LunarArcPluginLoader.class);
         this.datapackManager = new io.papermc.paper.datapack.PaperDatapackManager(console);
@@ -309,12 +311,6 @@ public class CraftServer implements Server {
             paperGlobalConfig.options().copyDefaults(true);
             paperGlobalConfig.save(paperGlobalFile);
 
-            // Real key paths and defaults verified against Paper's own
-            // patches/server/0005-Paper-config-files.patch - "anticheat.obfuscation.items.enabled"
-            // was never a real Paper key (obfuscation.items has hide-itemmeta/hide-durability/
-            // hide-itemmeta-with-visual-effects, not a single enabled toggle), and the anti-xray
-            // section - the "hidden blocks" list - was missing entirely, which is why nothing
-            // existed for LunarArcAntiXrayOreBridge to add modded ores into.
             paperWorldConfig.addDefault("anticheat.obfuscation.items.hide-itemmeta", false);
             paperWorldConfig.addDefault("anticheat.obfuscation.items.hide-durability", false);
             paperWorldConfig.addDefault("anticheat.obfuscation.items.hide-itemmeta-with-visual-effects", false);
@@ -363,12 +359,8 @@ public class CraftServer implements Server {
 
     @Override
     public @NotNull String getName() {
-        // ServerBuildInfo.brandId()/isBrandCompatible() already answer "paper" for the modern
-        // detection path (see LunarArcServerBuildInfo). Older plugins that never migrated off this
-        // legacy string - EssentialsX among them - check it directly instead, so this has to agree
-        // with that answer rather than honestly saying "LunarArc": a real, confirmed mismatch here
-        // is what put Essentials into its unsupported-server warning path on a live boot. LunarArc's
-        // own branding stays visible elsewhere (getVersion(), the startup banner, /version).
+        // Must agree with ServerBuildInfo's brand - EssentialsX checks this string directly and
+        // warned about an unsupported server on a live boot when it didn't match.
         return "Paper";
     }
 

@@ -89,7 +89,7 @@ public class CraftOfflinePlayer implements OfflinePlayer {
             Object server = org.bukkit.Bukkit.getServer().getClass().getMethod("getHandle").invoke(org.bukkit.Bukkit.getServer());
             Object playerList = server.getClass().getMethod("getPlayerList").invoke(server);
             if (value) {
-                Class<?> entryClass = Class.forName("net.minecraft.server.players.ServerOpListEntry");
+                Class<?> entryClass = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.server.players.ServerOpListEntry");
                 Object entry = null;
                 for (var ctor : entryClass.getConstructors()) {
                     Class<?>[] t = ctor.getParameterTypes();

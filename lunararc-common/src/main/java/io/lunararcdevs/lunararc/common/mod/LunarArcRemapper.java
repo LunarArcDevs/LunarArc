@@ -35,12 +35,20 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
     private static final Map<MemberKey, String> METHOD_MAP = new HashMap<>();
     private static final Map<MemberNameKey, String> FIELD_NAME_MAP = new HashMap<>();
     private static final Map<MemberNameKey, String> METHOD_NAME_MAP = new HashMap<>();
-    // Indexes METHOD_MAP by (owner, name) so overload resolution by parameter
-    // descriptor never has to scan the full NMS method-mapping table (which can
-    // hold tens of thousands of entries). Built once alongside METHOD_MAP.
+    private static final Map<String, String> MOJANG_TO_INTERMEDIARY_CLASS = new HashMap<>();
+    private static final Map<String, String> INTERMEDIARY_TO_MOJANG_CLASS = new HashMap<>();
+    private static final Map<MemberKey, String> INTERMEDIARY_FIELD_MAP = new HashMap<>();
+    private static final Map<MemberKey, String> INTERMEDIARY_METHOD_MAP = new HashMap<>();
+    private static final Map<MemberNameKey, String> INTERMEDIARY_FIELD_NAME_MAP = new HashMap<>();
+    private static final Map<MemberNameKey, String> INTERMEDIARY_METHOD_NAME_MAP = new HashMap<>();
+    private static final Map<MemberNameKey, String> INTERMEDIARY_TO_MOJANG_FIELD_NAME = new HashMap<>();
+    private static final Map<MemberNameKey, String> INTERMEDIARY_TO_MOJANG_METHOD_NAME = new HashMap<>();
+    private static volatile Boolean needsIntermediaryHopCache;
     private static final Map<MemberNameKey, List<Map.Entry<MemberKey, String>>> METHOD_OVERLOAD_INDEX = new HashMap<>();
+    private static final Map<MemberNameKey, List<Map.Entry<MemberKey, String>>> INTERMEDIARY_METHOD_OVERLOAD_INDEX = new HashMap<>();
     private static final Map<String, String> RUNTIME_FIELD_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, String> RUNTIME_METHOD_CACHE = new ConcurrentHashMap<>();
+    private static final Map<String, String> RUNTIME_DISPLAY_NAME_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, String> BYTECODE_FIELD_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, String> BYTECODE_METHOD_CACHE = new ConcurrentHashMap<>();
     private static final Map<String, String> ALREADY_CORRECT_CACHE = new ConcurrentHashMap<>();
@@ -90,9 +98,152 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
             try (InputStream stream = loader.getResourceAsStream(base + "plugin-remap.tsv")) {
                 if (stream != null) loadOverrides(stream);
             }
+
+            try (InputStream stream = loader.getResourceAsStream(base + "intermediary.tiny")) {
+                if (stream != null) loadIntermediaryMappings(stream);
+            }
         } catch (Exception e) {
             throw new ExceptionInInitializerError(e);
         }
+    }
+
+    private static void loadIntermediaryMappings(InputStream stream) throws Exception {
+        List<String> lines;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            lines = reader.lines().toList();
+        }
+        if (lines.isEmpty()) return;
+
+        String mojangOwner = null;
+        String intermediaryOwner = null;
+        for (int i = 1; i < lines.size(); i++) {
+            String line = lines.get(i);
+            if (line.isEmpty() || line.charAt(0) == '#') continue;
+            String[] p = line.split("\\t", -1);
+
+            if (p.length >= 3 && "c".equals(p[0])) {
+                mojangOwner = p[1];
+                intermediaryOwner = p[2];
+                if (!mojangOwner.isEmpty() && !intermediaryOwner.isEmpty()) {
+                    MOJANG_TO_INTERMEDIARY_CLASS.put(mojangOwner, intermediaryOwner);
+                    INTERMEDIARY_TO_MOJANG_CLASS.put(intermediaryOwner, mojangOwner);
+                }
+                continue;
+            }
+
+            if (p.length >= 5 && p[0].isEmpty() && ("f".equals(p[1]) || "m".equals(p[1]))
+                    && mojangOwner != null && intermediaryOwner != null) {
+                boolean method = "m".equals(p[1]);
+                String descriptor = p[2];
+                String mojangName = p[3];
+                String intermediaryName = p[4];
+                if (mojangName.isEmpty() || intermediaryName.isEmpty()) continue;
+                MemberKey key = new MemberKey(mojangOwner, mojangName, descriptor);
+                MemberNameKey nameKey = new MemberNameKey(mojangOwner, mojangName);
+                MemberNameKey reverseKey = new MemberNameKey(mojangOwner, intermediaryName);
+                if (method) {
+                    INTERMEDIARY_METHOD_MAP.put(key, intermediaryName);
+                    addUniqueNameMapping(INTERMEDIARY_METHOD_NAME_MAP, nameKey, intermediaryName);
+                    addUniqueNameMapping(INTERMEDIARY_TO_MOJANG_METHOD_NAME, reverseKey, mojangName);
+                    INTERMEDIARY_METHOD_OVERLOAD_INDEX
+                            .computeIfAbsent(nameKey, ignored -> new ArrayList<>())
+                            .add(Map.entry(key, intermediaryName));
+                } else {
+                    INTERMEDIARY_FIELD_MAP.put(key, intermediaryName);
+                    addUniqueNameMapping(INTERMEDIARY_FIELD_NAME_MAP, nameKey, intermediaryName);
+                    addUniqueNameMapping(INTERMEDIARY_TO_MOJANG_FIELD_NAME, reverseKey, mojangName);
+                }
+            }
+        }
+    }
+
+    private static boolean needsIntermediaryHop() {
+        Boolean cached = needsIntermediaryHopCache;
+        if (cached != null) return cached;
+        String platform = LunarArcServer.platformName();
+        boolean needs = "Fabric".equalsIgnoreCase(platform) || "Quilt".equalsIgnoreCase(platform);
+        LOGGER.info("Mojang -> Intermediary remap hop {} (platform={}, {} class(es)/{} method(s)/{} "
+                        + "field(s) loaded from intermediary.tiny)", needs ? "ENABLED" : "disabled",
+                platform, MOJANG_TO_INTERMEDIARY_CLASS.size(), INTERMEDIARY_METHOD_MAP.size(),
+                INTERMEDIARY_FIELD_MAP.size());
+        needsIntermediaryHopCache = needs;
+        return needs;
+    }
+
+    private static String toIntermediaryClass(String mojangInternalName) {
+        if (mojangInternalName == null) return null;
+        String mapped = MOJANG_TO_INTERMEDIARY_CLASS.get(mojangInternalName);
+        if (mapped != null) return mapped;
+        int nested = mojangInternalName.indexOf('$');
+        if (nested > 0) {
+            String mappedOwner = MOJANG_TO_INTERMEDIARY_CLASS.get(mojangInternalName.substring(0, nested));
+            if (mappedOwner != null) return mappedOwner + mojangInternalName.substring(nested);
+        }
+        return mojangInternalName;
+    }
+
+    private static String toIntermediaryMember(String mojangOwner, String mojangName, String mojangDescriptor,
+            boolean method) {
+        String exact = walkIntermediaryMember(mojangOwner, mojangName, mojangDescriptor, method, false);
+        if (exact != null) return exact;
+        String byName = walkIntermediaryMember(mojangOwner, mojangName, mojangDescriptor, method, true);
+        return byName != null ? byName : mojangName;
+    }
+
+    private static String walkIntermediaryMember(String mojangOwner, String mojangName, String mojangDescriptor,
+            boolean method, boolean allowUniqueNameFallback) {
+        String found = lookupIntermediaryMember(mojangOwner, mojangName, mojangDescriptor, method, allowUniqueNameFallback);
+        if (found != null) return found;
+        String intermediaryOwner = MOJANG_TO_INTERMEDIARY_CLASS.get(mojangOwner);
+        if (intermediaryOwner == null) return null;
+        try {
+            ClassLoader loader = LunarArcServer.modClassLoader();
+            if (loader == null) loader = LunarArcRemapper.class.getClassLoader();
+            Class<?> type = Class.forName(intermediaryOwner.replace('/', '.'), false, loader);
+            for (Class<?> current = type.getSuperclass(); current != null; current = current.getSuperclass()) {
+                String currentMojang = INTERMEDIARY_TO_MOJANG_CLASS.get(current.getName().replace('.', '/'));
+                if (currentMojang != null) {
+                    found = lookupIntermediaryMember(currentMojang, mojangName, mojangDescriptor, method, allowUniqueNameFallback);
+                    if (found != null) return found;
+                }
+                if (method) {
+                    found = walkIntermediaryInterfaceMember(
+                            current.getInterfaces(), mojangName, mojangDescriptor, allowUniqueNameFallback);
+                    if (found != null) return found;
+                }
+            }
+            if (method) {
+                return walkIntermediaryInterfaceMember(type.getInterfaces(), mojangName, mojangDescriptor, allowUniqueNameFallback);
+            }
+        } catch (ClassNotFoundException | LinkageError ignored) {
+        }
+        return null;
+    }
+
+    private static String walkIntermediaryInterfaceMember(Class<?>[] interfaces, String mojangName,
+            String mojangDescriptor, boolean allowUniqueNameFallback) {
+        for (Class<?> iface : interfaces) {
+            String ifaceMojang = INTERMEDIARY_TO_MOJANG_CLASS.get(iface.getName().replace('.', '/'));
+            if (ifaceMojang != null) {
+                String found = lookupIntermediaryMember(ifaceMojang, mojangName, mojangDescriptor, true, allowUniqueNameFallback);
+                if (found != null) return found;
+            }
+            String fromNested = walkIntermediaryInterfaceMember(
+                    iface.getInterfaces(), mojangName, mojangDescriptor, allowUniqueNameFallback);
+            if (fromNested != null) return fromNested;
+        }
+        return null;
+    }
+
+    private static String lookupIntermediaryMember(String mojangOwner, String mojangName, String mojangDescriptor,
+            boolean method, boolean allowUniqueNameFallback) {
+        Map<MemberKey, String> table = method ? INTERMEDIARY_METHOD_MAP : INTERMEDIARY_FIELD_MAP;
+        String mapped = table.get(new MemberKey(mojangOwner, mojangName, mojangDescriptor));
+        if (mapped != null) return mapped;
+        if (!allowUniqueNameFallback) return null;
+        Map<MemberNameKey, String> names = method ? INTERMEDIARY_METHOD_NAME_MAP : INTERMEDIARY_FIELD_NAME_MAP;
+        String unique = names.get(new MemberNameKey(mojangOwner, mojangName));
+        return unique != null && !AMBIGUOUS.equals(unique) ? unique : null;
     }
 
     private static void loadPaperMappings(InputStream stream) throws Exception {
@@ -293,11 +444,6 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
     @Override
     public String map(String internalName) {
         if (internalName == null) return null;
-
-        // Paper-style CraftBukkit is canonical and unversioned on LunarArc.
-        // Spigot plugins may still be compiled against versioned CraftBukkit names
-        // such as org/bukkit/craftbukkit/v1_21_R1/entity/CraftPlayer. Rewrite only
-        // that version segment to the canonical unversioned Paper package.
         if (internalName.startsWith(CRAFTBUKKIT_PREFIX)) {
             String remainder = internalName.substring(CRAFTBUKKIT_PREFIX.length());
             int slash = remainder.indexOf('/');
@@ -308,15 +454,20 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
         }
 
         if (!remapNms) return internalName;
-        String mapped = CLASS_MAP.get(internalName);
-        if (mapped != null) return mapped;
-
-        int nested = internalName.indexOf('$');
-        if (nested > 0) {
-            String mappedOwner = CLASS_MAP.get(internalName.substring(0, nested));
-            if (mappedOwner != null) return mappedOwner + internalName.substring(nested);
+        String mojangName = spigotToMojangClass(internalName);
+        if (mojangName == null) {
+            int nested = internalName.indexOf('$');
+            if (nested > 0) {
+                String mappedOwner = spigotToMojangClass(internalName.substring(0, nested));
+                if (mappedOwner != null) mojangName = mappedOwner + internalName.substring(nested);
+            }
         }
-        return internalName;
+        if (mojangName == null) mojangName = internalName;
+        return needsIntermediaryHop() ? toIntermediaryClass(mojangName) : mojangName;
+    }
+
+    private static String spigotToMojangClass(String name) {
+        return MOJANG_TO_SPIGOT_CLASS.containsKey(name) ? name : CLASS_MAP.get(name);
     }
 
     @Override
@@ -340,13 +491,28 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
                     ignored -> resolveInheritedBytecodeMember(spigotOwner, name, descriptor, false));
             if (name.equals(mapped)) mapped = null;
         }
+        String mojangName = mapped != null ? mapped : name;
+        if (needsIntermediaryHop()) {
+            String mojangOwner = CLASS_MAP.getOrDefault(spigotOwner, spigotOwner);
+            String mojangDescriptor = mapDescriptorClasses(descriptor, CLASS_MAP);
+            String intermediaryName = toIntermediaryMember(mojangOwner, mojangName, mojangDescriptor, false);
+            if (intermediaryName.equals(mojangName) && mojangOwner.startsWith("net/minecraft/")
+                    && !isIntermediaryMemberName(mojangName)
+                    && !namesRuntimeMember(resolveRuntimeClassForMojang(mojangOwner), mojangName, false)) {
+                LOGGER.warn("No Mojang -> Intermediary mapping found for NMS field {}#{} {} — plugin "
+                                + "bytecode will keep the Mojang name and is likely to throw "
+                                + "NoSuchFieldError at runtime on Fabric/Quilt.",
+                        mojangOwner, mojangName, mojangDescriptor);
+            }
+            return intermediaryName;
+        }
         if (mapped == null && spigotOwner.startsWith("net/minecraft/")
                 && !namesRuntimeMember(runtimeClassFor(spigotOwner), name, false)) {
             LOGGER.warn("No mapping found for NMS field {}#{} {} — plugin bytecode will keep the "
                             + "unmapped name and is likely to throw NoSuchFieldError at runtime.",
                     spigotOwner, name, descriptor);
         }
-        return mapped != null ? mapped : name;
+        return mojangName;
     }
 
     @Override
@@ -358,8 +524,6 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
         if (mapped == null && !java.util.Objects.equals(lookupDescriptor, descriptor)) {
             mapped = METHOD_MAP.get(new MemberKey(spigotOwner, name, descriptor));
         }
-        // Both lookups below are descriptor-blind, so each answer is checked against the runtime
-        // class before it is allowed to rewrite a call site. See runtimeHasMethod.
         if (mapped == null) {
             String wildcard = METHOD_MAP.get(new MemberKey(spigotOwner, name, "*"));
             if (wildcard != null && runtimeHasMethod(spigotOwner, wildcard, descriptor)) mapped = wildcard;
@@ -377,13 +541,28 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
                     ignored -> resolveInheritedBytecodeMember(spigotOwner, name, descriptor, true));
             if (name.equals(mapped)) mapped = null;
         }
+        String mojangName = mapped != null ? mapped : name;
+        if (needsIntermediaryHop()) {
+            String mojangOwner = CLASS_MAP.getOrDefault(spigotOwner, spigotOwner);
+            String mojangDescriptor = mapDescriptorClasses(descriptor, CLASS_MAP);
+            String intermediaryName = toIntermediaryMember(mojangOwner, mojangName, mojangDescriptor, true);
+            if (intermediaryName.equals(mojangName) && mojangOwner.startsWith("net/minecraft/")
+                    && !isIntermediaryMemberName(mojangName)
+                    && !namesRuntimeMember(resolveRuntimeClassForMojang(mojangOwner), mojangName, true)) {
+                LOGGER.warn("No Mojang -> Intermediary mapping found for NMS method {}#{} {} — plugin "
+                                + "bytecode will keep the Mojang name and is likely to throw "
+                                + "NoSuchMethodError at runtime on Fabric/Quilt.",
+                        mojangOwner, mojangName, mojangDescriptor);
+            }
+            return intermediaryName;
+        }
         if (mapped == null && spigotOwner.startsWith("net/minecraft/")
                 && !namesRuntimeMember(runtimeClassFor(spigotOwner), name, true)) {
             LOGGER.warn("No mapping found for NMS method {}#{} {} — plugin bytecode will keep the "
                             + "unmapped name and is likely to throw NoSuchMethodError at runtime.",
                     spigotOwner, name, descriptor);
         }
-        return mapped != null ? mapped : name;
+        return mojangName;
     }
 
     private static boolean runtimeHasMethod(String spigotOwner, String mappedName, String descriptor) {
@@ -414,10 +593,7 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
             return org.objectweb.asm.Type.getDescriptor(runtime).equals(declared.getDescriptor());
         }
         String internal = declared.getInternalName();
-        String mapped = CLASS_MAP.get(internal);
-        // A descriptor already written in Mojang names - some plugins ship them - is its own
-        // answer, and is recognised by the reverse table rather than assumed.
-        if (mapped == null && MOJANG_TO_SPIGOT_CLASS.containsKey(internal)) mapped = internal;
+        String mapped = spigotToMojangClass(internal);
         if (mapped == null) return true;
         return mapped.equals(org.objectweb.asm.Type.getInternalName(runtime));
     }
@@ -467,74 +643,93 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
     private String resolveInheritedBytecodeMember(String spigotOwner, String name, String descriptor, boolean method) {
         String mojangOwner = CLASS_MAP.get(spigotOwner);
         if (mojangOwner == null) return name;
-        try {
-            ClassLoader loader = LunarArcServer.modClassLoader();
-            if (loader == null) loader = LunarArcRemapper.class.getClassLoader();
-            Class<?> type = Class.forName(mojangOwner.replace('/', '.'), false, loader);
-            for (Class<?> current = type; current != null; current = current.getSuperclass()) {
-                String currentSpigot = MOJANG_TO_SPIGOT_CLASS.getOrDefault(
-                        current.getName().replace('.', '/'), current.getName().replace('.', '/'));
-                Map<MemberKey, String> mappings = method ? METHOD_MAP : FIELD_MAP;
-                String lookupDescriptor = toSpigotDescriptor(descriptor);
-                String mapped = mappings.get(new MemberKey(currentSpigot, name, lookupDescriptor));
-                if (mapped == null) mapped = mappings.get(new MemberKey(currentSpigot, name, descriptor));
-                // Descriptor-blind, exactly like the two fallbacks in mapMethodName, and so subject
-                // to the same failure: a name that happens to resolve on some superclass is not
-                // this call's method. Validate against the class the call site names, not the one
-                // this walk is standing on, because that is the class the JVM will resolve against.
-                if (mapped == null) {
-                    String wildcard = mappings.get(new MemberKey(currentSpigot, name, "*"));
-                    if (wildcard != null && (!method || runtimeHasMethod(spigotOwner, wildcard, descriptor))) {
-                        mapped = wildcard;
-                    }
-                }
-                if (mapped == null) {
-                    Map<MemberNameKey, String> names = method ? METHOD_NAME_MAP : FIELD_NAME_MAP;
-                    String unique = names.get(new MemberNameKey(currentSpigot, name));
-                    if (unique != null && !AMBIGUOUS.equals(unique)
-                            && (!method || runtimeHasMethod(spigotOwner, unique, descriptor))) {
-                        mapped = unique;
-                    }
-                }
-                if (mapped != null) return mapped;
-                if (method) {
-                    String fromInterface = resolveInterfaceBytecodeMember(
-                            spigotOwner, current.getInterfaces(), name, descriptor);
-                    if (fromInterface != null) return fromInterface;
-                }
-            }
-        } catch (ClassNotFoundException | LinkageError ignored) {
-        }
-        return name;
+        Class<?> type = resolveRuntimeClassForMojang(mojangOwner);
+        if (type == null) return name;
+        String exact = walkInheritedMember(type, name, descriptor, method, false);
+        if (exact != null) return exact;
+        String byName = walkInheritedMember(type, name, descriptor, method, true);
+        return byName != null ? byName : name;
     }
 
-    private String resolveInterfaceBytecodeMember(String spigotOwner, Class<?>[] interfaces,
-            String name, String descriptor) {
-        for (Class<?> iface : interfaces) {
-            String spigot = MOJANG_TO_SPIGOT_CLASS.getOrDefault(
-                    iface.getName().replace('.', '/'), iface.getName().replace('.', '/'));
-            String lookupDescriptor = toSpigotDescriptor(descriptor);
-            String mapped = METHOD_MAP.get(new MemberKey(spigot, name, lookupDescriptor));
-            if (mapped == null) mapped = METHOD_MAP.get(new MemberKey(spigot, name, descriptor));
-            // Descriptor-blind from here down; validated against the call's own owner.
-            if (mapped == null) {
-                String wildcard = METHOD_MAP.get(new MemberKey(spigot, name, "*"));
-                if (wildcard != null && runtimeHasMethod(spigotOwner, wildcard, descriptor)) mapped = wildcard;
+    private String walkInheritedMember(Class<?> type, String name, String descriptor, boolean method,
+            boolean allowUniqueNameFallback) {
+        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+            String currentSpigot = MOJANG_TO_SPIGOT_CLASS.getOrDefault(mojangNameOf(current), mojangNameOf(current));
+            String found = lookupBytecodeMember(currentSpigot, name, descriptor, method, allowUniqueNameFallback);
+            if (found != null) return found;
+            if (method) {
+                found = walkInheritedInterfaceMember(current.getInterfaces(), name, descriptor, allowUniqueNameFallback);
+                if (found != null) return found;
             }
-            if (mapped == null) {
-                String unique = METHOD_NAME_MAP.get(new MemberNameKey(spigot, name));
-                if (unique != null && !AMBIGUOUS.equals(unique)
-                        && runtimeHasMethod(spigotOwner, unique, descriptor)) {
-                    mapped = unique;
-                }
-            }
-            if (mapped != null) return mapped;
-            mapped = resolveInterfaceBytecodeMember(spigotOwner, iface.getInterfaces(), name, descriptor);
-            if (mapped != null) return mapped;
         }
         return null;
     }
 
+    private String walkInheritedInterfaceMember(Class<?>[] interfaces, String name, String descriptor,
+            boolean allowUniqueNameFallback) {
+        for (Class<?> iface : interfaces) {
+            String ifaceSpigot = MOJANG_TO_SPIGOT_CLASS.getOrDefault(mojangNameOf(iface), mojangNameOf(iface));
+            String found = lookupBytecodeMember(ifaceSpigot, name, descriptor, true, allowUniqueNameFallback);
+            if (found != null) return found;
+            found = walkInheritedInterfaceMember(iface.getInterfaces(), name, descriptor, allowUniqueNameFallback);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private String lookupBytecodeMember(String spigotOwner, String name, String descriptor, boolean method,
+            boolean allowUniqueNameFallback) {
+        Map<MemberKey, String> mappings = method ? METHOD_MAP : FIELD_MAP;
+        String lookupDescriptor = toSpigotDescriptor(descriptor);
+        String mapped = mappings.get(new MemberKey(spigotOwner, name, lookupDescriptor));
+        if (mapped == null) mapped = mappings.get(new MemberKey(spigotOwner, name, descriptor));
+        if (mapped == null) {
+            String wildcard = mappings.get(new MemberKey(spigotOwner, name, "*"));
+            if (wildcard != null && (!method || runtimeHasMethod(spigotOwner, wildcard, descriptor))) {
+                mapped = wildcard;
+            }
+        }
+        if (mapped == null && allowUniqueNameFallback) {
+            Map<MemberNameKey, String> names = method ? METHOD_NAME_MAP : FIELD_NAME_MAP;
+            String unique = names.get(new MemberNameKey(spigotOwner, name));
+            if (unique != null && !AMBIGUOUS.equals(unique)
+                    && (!method || runtimeHasMethod(spigotOwner, unique, descriptor))) {
+                mapped = unique;
+            }
+        }
+        return mapped;
+    }
+
+
+    /**
+     * The class name a {@link io.lunararcdevs.lunararc.common.mod.util.remapper.patcher.PluginPatcher}
+     * must compare a bytecode owner against for {@code mojangInternalName} - patchers run on already
+     * fully class-transformed plugin bytecode (see {@code LunarArcRemapper.transformInternal}), so an
+     * owner is the real Mojang name on NeoForge/Forge but the Intermediary name on Fabric/Quilt. A
+     * patcher that hardcodes the Mojang string only ever matches on NeoForge/Forge.
+     */
+    public static String currentRuntimeClassName(String mojangInternalName) {
+        return needsIntermediaryHop() ? toIntermediaryClass(mojangInternalName) : mojangInternalName;
+    }
+
+    /** Same platform-hop as {@link #currentRuntimeClassName}, applied to every class name embedded in
+     *  a method/field descriptor - for patchers matching a call's full descriptor, not just its owner. */
+    public static String currentRuntimeDescriptor(String mojangDescriptor) {
+        if (mojangDescriptor == null || mojangDescriptor.isEmpty()) return mojangDescriptor;
+        StringBuilder out = new StringBuilder(mojangDescriptor.length());
+        for (int i = 0; i < mojangDescriptor.length(); i++) {
+            char c = mojangDescriptor.charAt(i);
+            out.append(c);
+            if (c == 'L') {
+                int end = mojangDescriptor.indexOf(';', i);
+                if (end < 0) break;
+                out.append(currentRuntimeClassName(mojangDescriptor.substring(i + 1, end)));
+                out.append(';');
+                i = end;
+            }
+        }
+        return out.toString();
+    }
 
     public String mapRuntimeClassName(String className) {
         if (!remapNms || className == null || className.isEmpty()) return className;
@@ -563,6 +758,34 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
     }
 
 
+    /**
+     * The name a plugin's own {@code Field.getName()}/{@code Method.getName()} call should see for a
+     * member it obtained via a raw {@code getDeclaredFields()}/{@code getDeclaredMethods()} scan - a
+     * pattern several legacy NMS-reflection plugins use instead of any hooked reflective API, and
+     * which is otherwise invisible to this class entirely. Only translates Intermediary -> Mojang
+     * (never further to a Spigot reobf name): real modern Paper runs Mojang-mapped internals directly,
+     * so that is what such a plugin's own version-conditional logic already expects to find.
+     */
+    public String mapRuntimeMemberDisplayName(Class<?> runtimeOwner, String runtimeName, boolean method) {
+        if (!remapNms || runtimeOwner == null || runtimeName == null || !needsIntermediaryHop()) return runtimeName;
+        String cacheKey = runtimeOwner.getName() + '#' + runtimeName + '#' + (method ? 'M' : 'F') + "#disp";
+        return boundedComputeIfAbsent(RUNTIME_DISPLAY_NAME_CACHE, cacheKey,
+                ignored -> resolveRuntimeMemberDisplayName(runtimeOwner, runtimeName, method));
+    }
+
+    private static String resolveRuntimeMemberDisplayName(Class<?> runtimeOwner, String runtimeName, boolean method) {
+        String mojangOwner = mojangNameOf(runtimeOwner);
+        Map<MemberNameKey, String> reverse = method ? INTERMEDIARY_TO_MOJANG_METHOD_NAME : INTERMEDIARY_TO_MOJANG_FIELD_NAME;
+        String mojangName = reverse.get(new MemberNameKey(mojangOwner, runtimeName));
+        if (mojangName != null && !AMBIGUOUS.equals(mojangName)) return mojangName;
+        return runtimeName;
+    }
+
+    private static boolean isIntermediaryMemberName(String name) {
+        return name != null && (name.startsWith("method_") || name.startsWith("field_"))
+                && name.length() > 7 && Character.isDigit(name.charAt(name.indexOf('_') + 1));
+    }
+
     private static boolean namesRuntimeMember(Class<?> runtimeOwner, String name, boolean method) {
         if (runtimeOwner == null || name == null) return false;
         String key = runtimeOwner.getName() + '#' + name + '#' + (method ? 'M' : 'F');
@@ -585,16 +808,11 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
                 }
             }
             if (method) {
-                // An interface has no superclass, so the walk above never reaches Object - yet
-                // every interface implicitly declares its public methods, and getClass on an NBT
-                // tag arrives here exactly that way.
                 for (java.lang.reflect.Method candidate : Object.class.getDeclaredMethods()) {
                     if (candidate.getName().equals(name)) return true;
                 }
             }
         } catch (Throwable ignored) {
-            // A member whose own types are missing cannot be inspected. Treat that as "unknown"
-            // rather than "absent": staying quiet is better than a warning we cannot stand behind.
             return true;
         }
         return false;
@@ -612,8 +830,6 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
 
     /** The loaded Minecraft class behind a Spigot owner name, or null if it cannot be resolved. */
     private static Class<?> runtimeClassFor(String spigotOwner) {
-        // getOrDefault, not get: the owner may already be a Mojang name, which is one of the cases
-        // this is here to recognise.
         String mojangOwner = CLASS_MAP.getOrDefault(spigotOwner, spigotOwner);
         try {
             ClassLoader loader = LunarArcServer.modClassLoader();
@@ -624,15 +840,28 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
         }
     }
 
+    /** Same as {@link #runtimeClassFor} but starting from a Mojang owner name and resolving it in
+     *  whichever namespace the runtime actually uses - Mojang on NeoForge/Forge, Intermediary on
+     *  Fabric/Quilt - so callers on the intermediary-hop path can check whether a member already
+     *  exists under its Mojang name on the real class (enum values()/ordinal(), Mixin-added
+     *  CraftBukkit accessors, and inherited Object methods all do) before treating it as missing. */
+    private static Class<?> resolveRuntimeClassForMojang(String mojangOwner) {
+        String runtimeName = needsIntermediaryHop()
+                ? MOJANG_TO_INTERMEDIARY_CLASS.getOrDefault(mojangOwner, mojangOwner)
+                : mojangOwner;
+        try {
+            ClassLoader loader = LunarArcServer.modClassLoader();
+            if (loader == null) loader = LunarArcRemapper.class.getClassLoader();
+            return Class.forName(runtimeName.replace('/', '.'), false, loader);
+        } catch (ClassNotFoundException | LinkageError ignored) {
+            return null;
+        }
+    }
+
     private static String boundedComputeIfAbsent(Map<String, String> cache, String key,
                                                   java.util.function.Function<String, String> mapping) {
         String existing = cache.get(key);
         if (existing != null) return existing;
-        // Mapping/reflection inputs can originate in plugin bytecode. Keep memoization
-        // bounded so reloads or pathological plugins cannot grow a process-wide cache forever.
-        // Skip caching past the cap rather than clearing the whole map: under concurrent
-        // plugin/classloading a full clear can race across threads and repeatedly discard
-        // still-useful warm entries instead of just capping growth.
         if (cache.size() >= DYNAMIC_CACHE_LIMIT) return mapping.apply(key);
         return cache.computeIfAbsent(key, mapping);
     }
@@ -654,11 +883,16 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
 
     private String lookupRuntimeMember(Class<?> runtimeOwner, String spigotName, boolean method) {
         for (Class<?> current = runtimeOwner; current != null; current = current.getSuperclass()) {
-            String spigotOwner = MOJANG_TO_SPIGOT_CLASS.getOrDefault(current.getName().replace('.', '/'),
-                    current.getName().replace('.', '/'));
+            String mojangOwner = mojangNameOf(current);
+            String spigotOwner = MOJANG_TO_SPIGOT_CLASS.getOrDefault(mojangOwner, mojangOwner);
             Map<MemberNameKey, String> names = method ? METHOD_NAME_MAP : FIELD_NAME_MAP;
             String unique = names.get(new MemberNameKey(spigotOwner, spigotName));
-            if (unique != null && !AMBIGUOUS.equals(unique)) return unique;
+            if (unique != null && !AMBIGUOUS.equals(unique)) return toRuntimeMemberName(mojangOwner, unique, method);
+            if (needsIntermediaryHop()) {
+                Map<MemberNameKey, String> intermediaryNames = method ? INTERMEDIARY_METHOD_NAME_MAP : INTERMEDIARY_FIELD_NAME_MAP;
+                String direct = intermediaryNames.get(new MemberNameKey(mojangOwner, spigotName));
+                if (direct != null && !AMBIGUOUS.equals(direct)) return direct;
+            }
             if (method) {
                 for (Class<?> iface : current.getInterfaces()) {
                     String resolved = lookupRuntimeMember(iface, spigotName, true);
@@ -667,6 +901,22 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
             }
         }
         return null;
+    }
+
+    private static String mojangNameOf(Class<?> runtimeClass) {
+        String internal = runtimeClass.getName().replace('.', '/');
+        if (needsIntermediaryHop()) {
+            String mojang = INTERMEDIARY_TO_MOJANG_CLASS.get(internal);
+            if (mojang != null) return mojang;
+        }
+        return internal;
+    }
+
+    private static String toRuntimeMemberName(String mojangOwner, String mojangName, boolean method) {
+        if (!needsIntermediaryHop()) return mojangName;
+        Map<MemberNameKey, String> names = method ? INTERMEDIARY_METHOD_NAME_MAP : INTERMEDIARY_FIELD_NAME_MAP;
+        String unique = names.get(new MemberNameKey(mojangOwner, mojangName));
+        return unique != null && !AMBIGUOUS.equals(unique) ? unique : mojangName;
     }
 
     private String resolveRuntimeMethod(Class<?> runtimeOwner, String spigotName, Class<?>[] parameterTypes) {
@@ -684,15 +934,31 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
     private String lookupRuntimeMethod(Class<?> runtimeOwner, String spigotName, Class<?>[] parameterTypes,
                                        String parameterDescriptor) {
         for (Class<?> current = runtimeOwner; current != null; current = current.getSuperclass()) {
-            String spigotOwner = MOJANG_TO_SPIGOT_CLASS.getOrDefault(current.getName().replace('.', '/'),
-                    current.getName().replace('.', '/'));
+            String mojangOwner = mojangNameOf(current);
+            String spigotOwner = MOJANG_TO_SPIGOT_CLASS.getOrDefault(mojangOwner, mojangOwner);
             String descriptorMapped = parameterDescriptor == null ? null
                     : findMethodMappingByParameters(spigotOwner, spigotName, parameterDescriptor);
-            if (descriptorMapped != null && acceptsRuntimeParameters(runtimeOwner, descriptorMapped, parameterTypes)) return descriptorMapped;
+            if (descriptorMapped != null) {
+                String runtimeName = toRuntimeMemberName(mojangOwner, descriptorMapped, true);
+                if (acceptsRuntimeParameters(runtimeOwner, runtimeName, parameterTypes)) return runtimeName;
+            }
 
             String unique = METHOD_NAME_MAP.get(new MemberNameKey(spigotOwner, spigotName));
-            if (unique != null && !AMBIGUOUS.equals(unique)
-                    && acceptsRuntimeParameters(runtimeOwner, unique, parameterTypes)) return unique;
+            if (unique != null && !AMBIGUOUS.equals(unique)) {
+                String runtimeName = toRuntimeMemberName(mojangOwner, unique, true);
+                if (acceptsRuntimeParameters(runtimeOwner, runtimeName, parameterTypes)) return runtimeName;
+            }
+
+            if (needsIntermediaryHop()) {
+                String direct = INTERMEDIARY_METHOD_NAME_MAP.get(new MemberNameKey(mojangOwner, spigotName));
+                if (direct != null && !AMBIGUOUS.equals(direct)
+                        && acceptsRuntimeParameters(runtimeOwner, direct, parameterTypes)) return direct;
+                if (AMBIGUOUS.equals(direct) && parameterTypes != null) {
+                    String mojangDescriptor = runtimeParameterDescriptorMojang(parameterTypes);
+                    String exact = findIntermediaryMethodMappingByParameters(mojangOwner, spigotName, mojangDescriptor);
+                    if (exact != null && acceptsRuntimeParameters(runtimeOwner, exact, parameterTypes)) return exact;
+                }
+            }
             for (Class<?> iface : current.getInterfaces()) {
                 String resolved = lookupRuntimeMethod(iface, spigotName, parameterTypes, parameterDescriptor);
                 if (resolved != null) return resolved;
@@ -739,6 +1005,25 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
         return resolved;
     }
 
+    /** Same as {@link #findMethodMappingByParameters} but over the Mojang-keyed intermediary overload
+     *  index, for disambiguating a plugin's own direct-Mojang-name candidate by parameter descriptor
+     *  when the name alone is ambiguous (see the call site in {@link #lookupRuntimeMethod}). */
+    private static String findIntermediaryMethodMappingByParameters(String mojangOwner, String mojangName,
+                                                                      String parameterDescriptor) {
+        List<Map.Entry<MemberKey, String>> overloads =
+                INTERMEDIARY_METHOD_OVERLOAD_INDEX.get(new MemberNameKey(mojangOwner, mojangName));
+        if (overloads == null || overloads.isEmpty()) return null;
+        String resolved = null;
+        for (Map.Entry<MemberKey, String> entry : overloads) {
+            String descriptor = entry.getKey().descriptor();
+            int close = descriptor.indexOf(')');
+            if (close < 0 || !descriptor.substring(0, close + 1).equals(parameterDescriptor)) continue;
+            if (resolved == null) resolved = entry.getValue();
+            else if (!resolved.equals(entry.getValue())) return null;
+        }
+        return resolved;
+    }
+
     private static String runtimeParameterDescriptor(Class<?>[] parameterTypes) {
         StringBuilder descriptor = new StringBuilder("(");
         for (Class<?> parameterType : parameterTypes) descriptor.append(runtimeTypeDescriptor(parameterType));
@@ -763,10 +1048,35 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
         return 'L' + spigot + ';';
     }
 
+    /** Same as {@link #runtimeParameterDescriptor} but in Mojang namespace throughout, for matching
+     *  against {@code INTERMEDIARY_METHOD_MAP}'s descriptor-exact keys (which are Mojang-mapped). */
+    private static String runtimeParameterDescriptorMojang(Class<?>[] parameterTypes) {
+        StringBuilder descriptor = new StringBuilder("(");
+        for (Class<?> parameterType : parameterTypes) descriptor.append(runtimeTypeDescriptorMojang(parameterType));
+        return descriptor.append(')').toString();
+    }
+
+    private static String runtimeTypeDescriptorMojang(Class<?> type) {
+        if (type.isArray()) return type.getName().replace('.', '/');
+        if (type.isPrimitive()) {
+            if (type == void.class) return "V";
+            if (type == boolean.class) return "Z";
+            if (type == byte.class) return "B";
+            if (type == char.class) return "C";
+            if (type == short.class) return "S";
+            if (type == int.class) return "I";
+            if (type == long.class) return "J";
+            if (type == float.class) return "F";
+            if (type == double.class) return "D";
+        }
+        return 'L' + mojangNameOf(type) + ';';
+    }
+
     private String toSpigotOwner(String owner) {
-        String normalized = owner;
-        if (CLASS_MAP.containsKey(normalized)) return normalized;
-        return MOJANG_TO_SPIGOT_CLASS.getOrDefault(normalized, normalized);
+        String spigot = MOJANG_TO_SPIGOT_CLASS.get(owner);
+        if (spigot != null) return spigot;
+        if (CLASS_MAP.containsKey(owner)) return owner;
+        return owner;
     }
 
     private static String toSpigotDescriptor(String descriptor) {
@@ -830,10 +1140,6 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
     }
 
     private static boolean containsNmsReference(byte[] bytecode) {
-        // Class-file constant-pool UTF-8 entries are stored as raw modified-UTF bytes.
-        // These ASCII needles therefore safely identify ordinary NMS descriptors,
-        // owners, class literals, and reflective class-name strings without parsing
-        // or rewriting the class a first time.
         return containsAscii(bytecode, "net/minecraft/")
                 || containsAscii(bytecode, "net.minecraft.");
     }
@@ -858,9 +1164,6 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
                 return new MethodVisitor(Opcodes.ASM9, method) {
                     @Override
                     public void visitMethodInsn(int opcode, String owner, String methodName, String methodDescriptor, boolean isInterface) {
-                        // Generic compatibility for the legacy Spigot static accessor. The
-                        // modloader still owns the real MinecraftServer; this only redirects
-                        // old plugin bytecode to LunarArc's concrete server access method.
                         if (opcode == Opcodes.INVOKESTATIC
                                 && "net/minecraft/server/MinecraftServer".equals(owner)
                                 && "getServer".equals(methodName)
@@ -913,6 +1216,27 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
                             && "(Ljava/lang/String;)Ljava/lang/Class;".equals(methodDescriptor)) {
                         super.visitMethodInsn(Opcodes.INVOKESTATIC, bridgeOwner, "loadClass",
                                 "(Ljava/lang/ClassLoader;Ljava/lang/String;)Ljava/lang/Class;", false);
+                        return;
+                    }
+                    if (opcode == Opcodes.INVOKEVIRTUAL && "java/lang/invoke/MethodHandles$Lookup".equals(owner)
+                            && ("findGetter".equals(methodName) || "findSetter".equals(methodName)
+                                || "findStaticGetter".equals(methodName) || "findStaticSetter".equals(methodName))
+                            && "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/invoke/MethodHandle;".equals(methodDescriptor)) {
+                        super.visitMethodInsn(Opcodes.INVOKESTATIC, bridgeOwner, methodName,
+                                "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/Class;Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/invoke/MethodHandle;",
+                                false);
+                        return;
+                    }
+                    if (opcode == Opcodes.INVOKEVIRTUAL && "java/lang/reflect/Field".equals(owner)
+                            && "getName".equals(methodName) && "()Ljava/lang/String;".equals(methodDescriptor)) {
+                        super.visitMethodInsn(Opcodes.INVOKESTATIC, bridgeOwner, "fieldName",
+                                "(Ljava/lang/reflect/Field;)Ljava/lang/String;", false);
+                        return;
+                    }
+                    if (opcode == Opcodes.INVOKEVIRTUAL && "java/lang/reflect/Method".equals(owner)
+                            && "getName".equals(methodName) && "()Ljava/lang/String;".equals(methodDescriptor)) {
+                        super.visitMethodInsn(Opcodes.INVOKESTATIC, bridgeOwner, "methodName",
+                                "(Ljava/lang/reflect/Method;)Ljava/lang/String;", false);
                         return;
                     }
                     if ("java/lang/Class".equals(owner)) {

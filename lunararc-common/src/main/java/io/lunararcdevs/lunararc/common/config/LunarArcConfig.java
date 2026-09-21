@@ -19,8 +19,6 @@ public class LunarArcConfig {
 
     private static boolean velocityEnabled = false;
     private static byte[] velocitySecret = new byte[0];
-    private static boolean quietConsole = true;
-    private static boolean incompatibleCrash = true;
 
     public static void load() {
         Properties props = readProps();
@@ -34,21 +32,11 @@ public class LunarArcConfig {
             props.setProperty("proxy.velocity.secret", "");
             changed = true;
         }
-        if (!props.containsKey("console.quiet")) {
-            props.setProperty("console.quiet", "true");
-            changed = true;
-        }
-        if (!props.containsKey("incompatible.crash")) {
-            props.setProperty("incompatible.crash", "true");
-            changed = true;
-        }
         if (changed) writeProps(props);
 
         velocityEnabled = Boolean.parseBoolean(props.getProperty("proxy.velocity.enabled", "false"));
         String secret = props.getProperty("proxy.velocity.secret", "");
         velocitySecret = secret.isEmpty() ? new byte[0] : secret.getBytes(StandardCharsets.UTF_8);
-        quietConsole = Boolean.parseBoolean(props.getProperty("console.quiet", "true"));
-        incompatibleCrash = Boolean.parseBoolean(props.getProperty("incompatible.crash", "true"));
 
         LOGGER.debug("[LunarArc] Config loaded (velocity={}).", velocityEnabled);
     }
@@ -75,6 +63,4 @@ public class LunarArcConfig {
 
     public static boolean isVelocityEnabled() { return velocityEnabled; }
     public static byte[] getVelocitySecret() { return velocitySecret; }
-    public static boolean isQuietConsole() { return quietConsole; }
-    public static boolean isIncompatibleCrashEnabled() { return incompatibleCrash; }
 }

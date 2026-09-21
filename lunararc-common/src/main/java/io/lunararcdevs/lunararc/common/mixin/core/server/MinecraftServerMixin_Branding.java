@@ -32,5 +32,6 @@ public abstract class MinecraftServerMixin_Branding {
         } else {
             LUNARARC_BRANDING_LOGGER.info("{}", LunarArcVersionInfo.brandingLine());
         }
+        LUNARARC_BRANDING_LOGGER.info("This build is named \"{}\"", LunarArcVersionInfo.buildName());
     }
 }

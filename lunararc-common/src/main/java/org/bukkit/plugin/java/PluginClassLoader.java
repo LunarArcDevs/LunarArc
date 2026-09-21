@@ -43,6 +43,7 @@ public final class PluginClassLoader extends URLClassLoader
     private final boolean paperPlugin;
     private final LunarArcRemapper remapper;
     private final Path transformedCacheRoot;
+    private final io.lunararcdevs.lunararc.common.mod.LegacyNmsTranslator legacyNms;
     private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
 
     public io.papermc.paper.plugin.provider.entrypoint.DependencyContext dependencyContext;
@@ -58,9 +59,6 @@ public final class PluginClassLoader extends URLClassLoader
             File dataFolder, File file) throws MalformedURLException {
         super(new URL[]{file.toURI().toURL()}, parent);
         this.description = description;
-        // Before any of this plugin's classes load: some plugins need a system property in place
-        // ahead of their own class initialization, and the transformed-class cache means a
-        // per-class hook cannot be relied on to run.
         io.lunararcdevs.lunararc.common.server.LunarArcPluginFixManager
                 .applyPluginProperties(description == null ? null : description.getName());
         io.lunararcdevs.lunararc.common.server.LunarArcModuleOpener.openMinecraftModuleTo(
@@ -69,10 +67,14 @@ public final class PluginClassLoader extends URLClassLoader
         this.file = file;
         this.pluginLoader = loader;
         this.mappingNamespace = PluginMappingNamespace.detect(file);
-        this.remapNms = this.mappingNamespace.requiresNmsRemap();
+        this.legacyNms = PluginMappingNamespace.legacyTranslatorFor(file,
+                description == null ? file.getName() : description.getName(),
+                description == null ? null : description.getAPIVersion());
+        this.remapNms = this.mappingNamespace.requiresNmsRemap() || alwaysRemapsOnThisPlatform();
         this.paperPlugin = isPaperPlugin(file);
         this.remapper = new LunarArcRemapper(this.remapNms);
-        this.transformedCacheRoot = createTransformedCacheRoot(file, this.mappingNamespace);
+        this.transformedCacheRoot = createTransformedCacheRoot(file, this.mappingNamespace,
+                this.legacyNms == null ? null : this.legacyNms.fingerprint());
         this.libraryLoader = wrapPluginLibraryLoader(
                 io.lunararcdevs.lunararc.common.server.LunarArcLegacyLibraryResolver.create(description, parent),
                 "bukkit-libraries");
@@ -84,14 +86,6 @@ public final class PluginClassLoader extends URLClassLoader
                 ? io.lunararcdevs.lunararc.common.server.LunarArcPaperPluginSupport.joinedDependencies(file)
                 : java.util.Set.of();
         this.pluginLoader.getClassSpace().register(this, description, this.paperPlugin);
-        // Real Paper registers the classic (Spigot) plugin classloader into a group right here in
-        // the constructor, before the plugin's main class is ever loaded. Without it every classic
-        // plugin stayed outside PaperClassLoaderStorage entirely until enable time, when
-        // PaperPluginInstanceManager's registerUnsafePlugin() fallback caught it and warned
-        // ("Enabled plugin with unregistered ConfiguredPluginClassLoader ..."); until that point
-        // its classes were invisible to the global group, so cross-plugin lookups during onLoad()
-        // could not see them. The group's library predicate only dereferences dependencyContext
-        // at class-resolution time, which is always after the provider has assigned it.
         this.group = io.papermc.paper.plugin.provider.classloader.PaperClassLoaderStorage.instance()
                 .registerSpigotGroup(this);
     }
@@ -110,12 +104,6 @@ public final class PluginClassLoader extends URLClassLoader
                     try {
                         loaded = loadPlatformClassWithBackstop(name);
                     } catch (ClassNotFoundException notOnServer) {
-                        // "Platform" is a prefix guess, not a guarantee the server has the class.
-                        // javax.* in particular is mostly JDK but not entirely: plugins shade
-                        // javax.inject and javax.annotation routinely. Dead-ending here meant a
-                        // plugin's own bundled copy was never consulted - floodgate failed to load
-                        // with NoClassDefFoundError: javax/inject/Provider even though its jar
-                        // contains that class. Classes the server must own are still refused.
                         if (isServerOwnedClass(name)) throw notOnServer;
                         loaded = findClass(name, true);
                     }
@@ -230,26 +218,14 @@ public final class PluginClassLoader extends URLClassLoader
 
             activeRemapper = new LunarArcRemapper(true);
         }
-        // Paper's own plugin rewriter runs first, on the bytecode exactly as the plugin author
-        // compiled it. CraftBukkit reaches it through Bukkit.getUnsafe().processClass(); LunarArc
-        // calls the same code directly because the remapper this loader picks depends on the
-        // plugin's mapping namespace, which UnsafeValues has no way to know. Choosing
-        // activeRemapper from `original` above is deliberate: Commodore strips the legacy
-        // versioned CraftBukkit prefix, so the detection has to happen before it runs.
-        // Only the classic path gets it, exactly as real Paper does. A paper-plugin.yml plugin is
-        // written against current Mojang-mapped Paper API and carries no plugin.yml api-version,
-        // so Commodore would read it as pre-flattening and apply the whole legacy reroute set to
-        // code that is already correct. Paper routes those plugins through
-        // ClassloaderBytecodeModifier instead, which is a no-op here for the same reason.
         byte[] staged = this.paperPlugin
                 ? original
                 : org.bukkit.craftbukkit.util.CraftMagicNumbers
                         .applyPaperPluginRewrites(this.description, resourcePath, original);
+        if (this.legacyNms != null) {
+            staged = this.legacyNms.translate(staged);
+        }
         byte[] transformed = activeRemapper.transform(staged, className.replace('.', '/'));
-        // Real technique from MohistMC/Youer's PluginFixManager — patches known-problematic
-        // third-party plugin classes (currently: WorldEdit/FAWE version-detection checks) that
-        // would otherwise fail on a hybrid server. Applied after remapping, on the final
-        // bytecode that actually gets cached and loaded.
         transformed = LunarArcPluginFixManager.injectPluginFix(className, transformed);
         Files.createDirectories(cached.getParent());
         Path temp = cached.resolveSibling(cached.getFileName() + ".tmp");
@@ -283,7 +259,8 @@ public final class PluginClassLoader extends URLClassLoader
         }
     }
 
-    private static Path createTransformedCacheRoot(File pluginFile, PluginMappingNamespace mappingNamespace) {
+    private static Path createTransformedCacheRoot(File pluginFile, PluginMappingNamespace mappingNamespace,
+            String legacyFingerprint) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             try (InputStream input = Files.newInputStream(pluginFile.toPath())) {
@@ -296,21 +273,18 @@ public final class PluginClassLoader extends URLClassLoader
             digest.update(mappingNamespace.name().getBytes(java.nio.charset.StandardCharsets.UTF_8));
             digest.update(io.lunararcdevs.lunararc.common.server.LunarArcVersionInfo.minecraftVersion()
                     .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            digest.update(LunarArcServer.platformName().getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-            digest.update("compat-transform-v23-worldedit-regen-chunksource-close".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-
-            // The token above has to be bumped by hand whenever the transform changes, and it was
-            // missed once already: a remapper fix shipped, every plugin kept loading the bad
-            // bytecode cached under the old key, and the fix looked like it had not worked.
-            // Folding the LunarArc version in makes that failure impossible - any build that
-            // changes the transformer also changes the key. Restarts on an unchanged build still
-            // hit the cache, which is what it is for.
+            digest.update("compat-transform-v29-legacy-nms-translation".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            if (legacyFingerprint != null) {
+                digest.update(legacyFingerprint.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
             digest.update(io.lunararcdevs.lunararc.common.server.LunarArcVersionInfo.lunarArcVersion()
                     .getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
             ClassLoader owner = PluginClassLoader.class.getClassLoader();
             String mappingBase = "mappings/" + io.lunararcdevs.lunararc.common.server.LunarArcVersionInfo.minecraftVersion() + "/";
-            for (String resource : new String[]{"paper-reobf.tiny", "plugin-remap.tsv"}) {
+            for (String resource : new String[]{"paper-reobf.tiny", "plugin-remap.tsv", "intermediary.tiny"}) {
                 try (InputStream mapping = owner.getResourceAsStream(mappingBase + resource)) {
                     if (mapping != null) {
                         byte[] buffer = new byte[32 * 1024];
@@ -373,13 +347,6 @@ public final class PluginClassLoader extends URLClassLoader
         try {
             return loadPlatformClass(name);
         } catch (ClassNotFoundException notOnParent) {
-            // The parent is whichever loader built this plugin's provider, normally the mod's own
-            // loader, which sees Minecraft. That is an assumption about how the active loader
-            // arranged its class space rather than something LunarArc controls, and findClass
-            // already keeps modClassLoader() as a backstop for the non-platform path. Platform
-            // classes deserve the same backstop: an NMS class reachable from the mod but not from
-            // this plugin's parent should resolve rather than surface as a link error in the
-            // middle of a plugin's method.
             ClassLoader modClassLoader = LunarArcServer.modClassLoader();
             if (modClassLoader != null && modClassLoader != getParent()) {
                 try {
@@ -391,13 +358,6 @@ public final class PluginClassLoader extends URLClassLoader
         }
     }
 
-    /**
-     * Classes the server must own outright, where a plugin's bundled copy would be wrong rather
-     * than merely redundant: the JVM's own packages, the Bukkit/Paper API the server implements,
-     * Minecraft itself, and Adventure, which passes objects across the plugin boundary and breaks
-     * if two copies exist. MohistMC/Youer draws the same line, refusing org.bukkit and
-     * net.minecraft in findClass so they can only ever come from the server.
-     */
     private static boolean isServerOwnedClass(String name) {
         return name.startsWith("java.")
                 || name.startsWith("jdk.")
@@ -407,22 +367,6 @@ public final class PluginClassLoader extends URLClassLoader
                 || name.startsWith("io.papermc.paper.")
                 || name.startsWith("com.destroystokyo.paper.")
                 || name.startsWith("net.kyori.")
-                // isPlatformClass's own comment explains why gson is routed through the platform
-                // backstop first - a same-name-different-loader split between it and a plugin's own
-                // bundled gson is exactly what took Essentials down with "Type 'JsonArray' is not
-                // assignable to 'JsonElement'" in onDisable(). "Preferring" the platform copy was
-                // not enough on its own: loadClass's catch at line ~110 falls back to this
-                // classloader's own six-source chain - which can find a plugin's own bundled gson -
-                // whenever the platform backstop's two sources (parent, then the mod loader) both
-                // miss, and Essentials shipping its own gson under this exact package is exactly the
-                // case where that fallback finds something. That single fallback resolving
-                // differently than every other reference already cached as the platform's copy is
-                // the split itself, not a fix for it. Being server-owned here closes that: a miss on
-                // both platform sources throws instead of silently trying a plugin-local copy, so
-                // every reference across the whole server resolves from the same source or fails
-                // together - the same guarantee this class already gives net.minecraft./org.bukkit.,
-                // and just as safe here since NeoForge's own dependency tree carries gson the same
-                // way it carries net.kyori., so the platform backstop realistically never misses.
                 || name.startsWith("com.google.gson.");
     }
 
@@ -561,21 +505,6 @@ public final class PluginClassLoader extends URLClassLoader
                 || name.startsWith("net.kyori.examination.")
                 || name.startsWith("com.mojang.")
                 || name.startsWith("net.minecraft.")
-                // Ambient, not part of the Bukkit API contract, present on every server the same
-                // way com.mojang. is - and unlike com.mojang., also present a second time on a
-                // hybrid server's mod loader classpath (NeoForge depends on it too). A plugin that
-                // never declares it as a library (most don't; it has always just been there) can
-                // have two of its own references resolve through two different steps of the
-                // six-source scan below, handed two unrelated Class objects for the same name.
-                // That is exactly what VerifyError: "Type 'JsonArray' is not assignable to
-                // 'JsonElement'" is - not a plugin bug, a same-name-different-loader split, and it
-                // took Essentials down in onDisable(). Routing gson through the platform backstop
-                // first makes every reference resolve from the same one or two stable sources
-                // (parent, then the mod loader) instead of whichever of six answered first; a
-                // plugin that ships its own gson under this exact package name was already exposed
-                // to this class of bug on any multi-plugin server, hybrid or not, so preferring the
-                // platform's copy is the safer default. classload traces which of the two
-                // deterministic sources actually answers, same as it does for everything else here.
                 || name.startsWith("com.google.gson.");
     }
 
@@ -622,6 +551,11 @@ public final class PluginClassLoader extends URLClassLoader
         dependencies.addAll(description.getDepend());
         dependencies.addAll(description.getSoftDepend());
         return dependencies;
+    }
+
+    private static boolean alwaysRemapsOnThisPlatform() {
+        String platform = LunarArcServer.platformName();
+        return "Fabric".equalsIgnoreCase(platform) || "Quilt".equalsIgnoreCase(platform);
     }
 
     private static boolean isPaperPlugin(File pluginFile) {
@@ -690,13 +624,6 @@ public final class PluginClassLoader extends URLClassLoader
         if (this.plugin != null) throw new IllegalStateException("Plugin already initialized!");
 
         this.plugin = plugin;
-        // Real Paper's PluginDescriptionFile implements PluginMeta directly, so classic
-        // (plugin.yml) plugins get the same object for both parameters. Wrapping it in
-        // LunarArcPluginMeta here instead broke every `getPluginMeta() instanceof
-        // PluginDescriptionFile` check in the codebase (e.g. PaperPluginInstanceManager's
-        // enablePlugin(), which uses that check to decide whether to register plugin.yml
-        // "commands:" into the CommandMap) - meaning no classic plugin ever got its declared
-        // commands registered, so getCommand() always returned null for them (crashed Vault).
         plugin.init(
                 pluginLoader.getServerInstance(),
                 description,

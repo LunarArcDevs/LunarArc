@@ -7,10 +7,6 @@ An experimental hybrid Minecraft server compatibility layer. **Forge/NeoForge/Fa
 
 LunarArc also provides native [EssentialsX](https://essentialsx.net) integration for modded blocks and items. Modded registry entries are automatically exposed to EssentialsX, allowing commands such as `/give`, `/item`, and `/i` to work with modded content **out of the box, with no additional integration plugin required**.
 
-This integration follows the same general approach used by [ModdedIntegration](https://github.com/atferrys/ModdedIntegration), which provides modded item and block support for hybrid servers such as Mohist and Arclight.
-
-
-
 
 |        Release        |  Forge  | NeoForge |  Fabric  |  QuiltMC  | Status |                                                                                                                                              Build                                                           
 |:--------------------:|:-------:|:--------:|:--------:|:--------:|:------:|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
@@ -50,11 +46,10 @@ and <a href="https://www.yourkit.com/youmonitor/">YourKit YouMonitor</a>.
 
 LunarArc uses the following upstream projects as runtime platforms, API contracts, or implementation references:
 
-- **[Arclight](https://github.com/IzzelAliz/Arclight)** — Primary architecture reference for the hybrid server structure, loader-specific mixins, lifecycle hooks, event coexistence, and concrete Bukkit/Craft integration.
-- **[Youer](https://github.com/MohistMC/Youer)** — Reference for Minecraft/Paper 1.21.1 CraftBukkit adapters, entity wrappers, registries, inventories, item meta, brewing, and other Paper compatibility behavior.
-- **[Paper](https://github.com/PaperMC/Paper)** — Bukkit/Paper API and server-behavior contract used to match Paper 1.21.1 plugin compatibility.
+- **[Arclight](https://github.com/IzzelAliz/Arclight)** - Primary architecture reference for the hybrid server structure, loader-specific mixins, lifecycle hooks, event coexistence, and concrete Bukkit/Craft integration.
+- **[Paper](https://github.com/PaperMC/Paper)** - Bukkit/Paper API and server-behavior contract used to match Paper 1.21.1 plugin compatibility.
 - **[Minecraft Forge](https://github.com/MinecraftForge/MinecraftForge)** — Forge runtime and loader APIs used by LunarArc's Forge module.
-- **[NeoForge](https://github.com/neoforged/NeoForge)** — NeoForge runtime and loader APIs used by LunarArc's NeoForge module.
-- **[Fabric](https://github.com/FabricMC/fabric)** — Fabric loader/API lifecycle and integration hooks used by LunarArc's Fabric module.
-- **[Quilt](https://github.com/QuiltMC/quilt-loader)** — Quilt runtime/loader support used by LunarArc's Quilt module.
-- **[SpongePowered Mixin](https://github.com/SpongePowered/Mixin)** — Bytecode mixin framework used for targeted hooks and bridge state on the real loader-owned Minecraft classes.
+- **[NeoForge](https://github.com/neoforged/NeoForge)** - NeoForge runtime and loader APIs used by LunarArc's NeoForge module.
+- **[Fabric](https://github.com/FabricMC/fabric)**  - Fabric loader/API lifecycle and integration hooks used by LunarArc's Fabric module.
+- **[Quilt](https://github.com/QuiltMC/quilt-loader)** - Quilt runtime/loader support used by LunarArc's Quilt module.
+- **[SpongePowered Mixin](https://github.com/SpongePowered/Mixin)** - Bytecode mixin framework used for targeted hooks and bridge state on the real loader-owned Minecraft classes.

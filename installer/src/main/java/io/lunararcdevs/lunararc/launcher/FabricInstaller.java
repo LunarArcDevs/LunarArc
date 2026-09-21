@@ -30,8 +30,16 @@ public class FabricInstaller {
             }
         }
 
+        if (!needsInstall) {
+            String missingJar = LauncherUtils.missingManifestClassPathJar(fabricServerJar);
+            if (missingJar != null) {
+                ConsoleUI.printStep("install.fabric.reinstall_missing_jar", fabricVersion, missingJar);
+                needsInstall = true;
+            }
+        }
+
         if (needsInstall) {
-            ConsoleUI.printStep("Downloading missing libraries...");
+            ConsoleUI.printStep("install.downloading_libraries");
             if (!Files.exists(installerJar)) {
                 Downloader.download(installerUrl, installerJar);
             }
@@ -44,13 +52,12 @@ public class FabricInstaller {
             int exitCode = process.waitFor();
 
             if (exitCode != 0) {
-                ConsoleUI.printError("Fabric installer failed with exit code: " + exitCode);
+                ConsoleUI.printError("install.fabric.failed_exit_code", exitCode);
                 return;
             }
 
             if (!Files.exists(fabricServerJar)) {
-                ConsoleUI.printError("Fabric installer reported success but did not produce "
-                        + fabricServerJar.getFileName() + ".");
+                ConsoleUI.printError("install.fabric.missing_output_jar", fabricServerJar.getFileName());
                 return;
             }
 

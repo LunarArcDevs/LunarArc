@@ -26,6 +26,7 @@ public final class PluginCompatibilityRegressionTest {
         io.lunararcdevs.lunararc.common.server.EssentialsAliasRegressionTest.run();
         io.lunararcdevs.lunararc.common.server.RegistryAccessRegressionTest.run();
         io.lunararcdevs.lunararc.common.server.MavenLibraryResolverRegressionTest.run();
+        io.papermc.paper.plugin.provider.configuration.LegacyPaperMetaLoadOrderRegressionTest.run();
         AtomicBoolean enabled = new AtomicBoolean(true);
         Plugin plugin = (Plugin) Proxy.newProxyInstance(Plugin.class.getClassLoader(), new Class<?>[]{Plugin.class},
                 (self, method, values) -> switch (method.getName()) {

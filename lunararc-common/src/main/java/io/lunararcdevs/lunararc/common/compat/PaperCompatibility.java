@@ -9,12 +9,7 @@ public final class PaperCompatibility {
 
     private PaperCompatibility() {
     }
-
-    /**
-     * LunarArc 1.21.1 accepts plugins compiled for the 1.21 API family.
-     * Patch-family acceptance does not fabricate missing binary members: the
-     * remapper/classloader still rejects genuinely incompatible symbols.
-     */
+    
     public static boolean isSupportedApiVersion(String apiVersion) {
         if (apiVersion == null || apiVersion.isBlank()) {
             return true; // legacy plugin.yml behaviour

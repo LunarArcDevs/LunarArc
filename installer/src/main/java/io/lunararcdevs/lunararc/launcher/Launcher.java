@@ -20,6 +20,13 @@ public class Launcher {
     }
 
     public static void main(String[] args) {
+        // Log4j2 registers its own JVM shutdown hook that closes every appender, independently of
+        // and unsynchronized with vanilla's own "Server Shutdown Thread" hook (which correctly waits
+        // for the current tick/autosave/stopServer() to finish first) - the two race, and Log4j's can
+        // close logs/latest.log mid-autosave. Disabling Log4j's own hook leaves vanilla's as the only
+        // one touching logging, restoring the ordering it already assumes. Runs on both the relaunch
+        // below and the real child process, since both re-enter this same method from the top.
+        System.setProperty("log4j.shutdownHookEnabled", "false");
 
         if (LunarArcAgent.instrumentation == null) {
             try {
@@ -96,6 +103,7 @@ public class Launcher {
                 saveConfiguration(configPath, config);
             }
             recordVersion(workingDir, projectVersion);
+            SpigotWorldMigration.run(workingDir);
 
             Path selfPath = Paths.get(Launcher.class.getProtectionDomain().getCodeSource().getLocation().toURI())
                     .toAbsolutePath();

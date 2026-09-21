@@ -174,11 +174,6 @@ public abstract class EntityMixin implements EntityBridge, CommandSourceBridge {
     }
     @Inject(method = "startRiding(Lnet/minecraft/world/entity/Entity;Z)Z", at = @At("HEAD"), cancellable = true, require = 0)
     private void lunararc$vehicleEnter(Entity vehicle, boolean force, CallbackInfoReturnable<Boolean> cir) {
-        // startRiding is a general vanilla method reachable from structure/entity-spawn
-        // generation on worker threads (e.g. a spawner-style structure placing an entity
-        // already riding another) — same class of risk confirmed by a real crash in
-        // LivingEntity.addEffect(). Skip firing the Bukkit event off-thread rather than let
-        // PaperEventManager's safety check throw and abort the underlying vanilla operation.
         if (!org.bukkit.Bukkit.isPrimaryThread()) return;
         org.bukkit.entity.Entity bukkitVehicle = ((EntityBridge) vehicle).lunararc$getBukkitEntity();
         org.bukkit.entity.Entity bukkitPassenger = this.lunararc$getBukkitEntity();
@@ -197,24 +192,10 @@ public abstract class EntityMixin implements EntityBridge, CommandSourceBridge {
     private void lunararc$vehicleExit(Entity passenger, CallbackInfo ci) {
         // Same reasoning as lunararc$vehicleEnter above.
         if (!org.bukkit.Bukkit.isPrimaryThread()) return;
-        // Entity.removeVehicle() - the only vanilla caller of removePassenger - always clears
-        // the passenger's own `vehicle` field to null BEFORE calling vehicle.removePassenger(this)
-        // (confirmed by reading the real bytecode: field write happens, then the invokevirtual).
-        // A `passenger.getVehicle() != this` guard here is therefore never true for a real
-        // dismount and was silently swallowing this whole method, including the SitEverywhere
-        // dismount fix below - it just never actually ran.
         org.bukkit.entity.Entity bukkitVehicle = this.lunararc$getBukkitEntity();
         org.bukkit.entity.Entity bukkitPassenger = ((EntityBridge) passenger).lunararc$getBukkitEntity();
 
-        // General case - fires for any entity dismounting any other, unlike VehicleExitEvent
-        // below which only applies when the vehicle is a real org.bukkit.entity.Vehicle (boats,
-        // minecarts, etc). A real confirmed bug: SitEverywhere (and "sit anywhere" plugins in
-        // general) seat players on a plain ArmorStand, which is not a Vehicle, and rely entirely
-        // on this event to detect the dismount and clear their own "is sitting" bookkeeping -
-        // without it, that state never clears and the player can never sit again.
-        org.spigotmc.event.entity.EntityDismountEvent dismountEvent =
-                new org.spigotmc.event.entity.EntityDismountEvent(bukkitVehicle, bukkitPassenger);
-        org.bukkit.Bukkit.getPluginManager().callEvent(dismountEvent);
+        io.lunararcdevs.lunararc.common.compat.LunarArcDismountEvents.fireEntityDismount(bukkitVehicle, bukkitPassenger);
 
         if (bukkitVehicle instanceof org.bukkit.entity.Vehicle bukkitVehicleEntity
                 && bukkitPassenger instanceof org.bukkit.entity.LivingEntity livingPassenger) {
@@ -275,8 +256,6 @@ public abstract class EntityMixin implements EntityBridge, CommandSourceBridge {
     @WrapMethod(method = "igniteForSeconds")
     private void lunararc$combust(float seconds, Operation<Void> original) {
         Entity self = (Entity) (Object) this;
-        // igniteForSeconds is a general vanilla method reachable from structure/entity-spawn
-        // generation on worker threads, same class of risk as lunararc$vehicleEnter above.
         if (self.level().isClientSide || !org.bukkit.Bukkit.isPrimaryThread()) {
             original.call(seconds);
             return;

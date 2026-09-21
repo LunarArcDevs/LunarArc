@@ -21,22 +21,14 @@ public final class LunarArcIntegratedPatcher implements PluginPatcher {
     // doesn't have and Mixin can't add. Retargeting the NEW/INVOKESPECIAL pair to our subclass at
     // plugin-load time keeps WorldEdit's own bytecode otherwise untouched.
     private static final String WORLDEDIT_REGEN_ADAPTER = "com/sk89q/worldedit/bukkit/adapter/impl/v1_21/PaperweightAdapter";
-    private static final String SERVER_LEVEL = "net/minecraft/server/level/ServerLevel";
+    private static final String SERVER_LEVEL_MOJANG = "net/minecraft/server/level/ServerLevel";
     private static final String REGEN_LEVEL = "io/lunararcdevs/lunararc/common/compat/worldedit/LunarArcWorldEditRegenLevel";
-
-    // WorldEdit's own NoOpWorldLoadListener was compiled against Paper's ChunkProgressListener,
-    // where onStatusChange(ChunkPos, ChunkStatus) has a default no-op body - it never overrides
-    // it. Vanilla's interface keeps that method abstract, so calling it here throws
-    // AbstractMethodError from a background chunk-generation task thread, killing that task and
-    // wedging //regen's chunk queue forever (confirmed live: reproduces identically with Sable
-    // removed, ruling that mod out as the cause of the hang entirely). Redirect construction to
-    // our own listener that actually implements all four methods.
     private static final String WORLDEDIT_NOOP_LISTENER =
             WORLDEDIT_REGEN_ADAPTER + "$NoOpWorldLoadListener";
     private static final String LUNARARC_NOOP_LISTENER =
             "io/lunararcdevs/lunararc/common/compat/worldedit/LunarArcNoOpChunkProgressListener";
 
-    private static final String REGEN_CTOR_DESC =
+    private static final String REGEN_CTOR_DESC_MOJANG =
             "(Lnet/minecraft/server/MinecraftServer;"
                     + "Ljava/util/concurrent/Executor;"
                     + "Lnet/minecraft/world/level/storage/LevelStorageSource$LevelStorageAccess;"
@@ -49,16 +41,17 @@ public final class LunarArcIntegratedPatcher implements PluginPatcher {
                     + "Lorg/bukkit/generator/ChunkGenerator;"
                     + "Lorg/bukkit/generator/BiomeProvider;)V";
 
-    // WorldEdit's cleanup calls chunkSource.close(false) - a Paper-only overload of
-    // ServerChunkCache.close() that takes a "save" flag. Vanilla only has the plain no-arg
-    // close() (which this platform's chunk source already is), so this throws NoSuchMethodError
-    // right after a successful regen, in the finally block that's supposed to tear down the
-    // throwaway level - the actual block copy already succeeded by then, but WorldEdit reports
-    // the command as failed anyway since the exception propagates out of doRegen(). Strip the
-    // boolean argument and retarget the call to the real no-arg close().
     private static final String CLOSE_NAME = "close";
     private static final String CLOSE_WITH_SAVE_DESC = "(Z)V";
     private static final String CLOSE_NO_ARG_DESC = "()V";
+    private static final String PLAYER_INFO_PACKET_MOJANG =
+            "net/minecraft/network/protocol/game/ClientboundPlayerInfoUpdatePacket";
+    private static final String PLAYER_INFO_ENTRY_MOJANG = PLAYER_INFO_PACKET_MOJANG + "$Entry";
+    private static final String PLAYER_INFO_COMPAT =
+            "io/lunararcdevs/lunararc/common/compat/LunarArcPlayerInfoUpdatePacketCompat";
+    private static final String LEVEL_CHUNK_MOJANG = "net/minecraft/world/level/chunk/LevelChunk";
+    private static final String BLOCK_POS_MOJANG = "net/minecraft/core/BlockPos";
+    private static final String BLOCK_STATE_MOJANG = "net/minecraft/world/level/block/state/BlockState";
 
     static {
         SPECIFIC.put(WORLDEDIT_REGEN_ADAPTER, LunarArcIntegratedPatcher::patchWorldEditRegen);
@@ -70,6 +63,57 @@ public final class LunarArcIntegratedPatcher implements PluginPatcher {
         if (consumer != null) {
             consumer.accept(node, classRepo);
         }
+        patchPlayerInfoUpdateSingleEntryConstructor(node);
+        patchChunkSetBlockStateExtraFlag(node);
+    }
+
+    private static void patchChunkSetBlockStateExtraFlag(ClassNode node) {
+        String levelChunkOwner = io.lunararcdevs.lunararc.common.mod.LunarArcRemapper
+                .currentRuntimeClassName(LEVEL_CHUNK_MOJANG);
+        String blockPosOwner = io.lunararcdevs.lunararc.common.mod.LunarArcRemapper
+                .currentRuntimeClassName(BLOCK_POS_MOJANG);
+        String blockStateOwner = io.lunararcdevs.lunararc.common.mod.LunarArcRemapper
+                .currentRuntimeClassName(BLOCK_STATE_MOJANG);
+        String fourArgDesc = "(L" + blockPosOwner + ";L" + blockStateOwner + ";ZZ)L" + blockStateOwner + ";";
+        String threeArgDesc = "(L" + blockPosOwner + ";L" + blockStateOwner + ";Z)L" + blockStateOwner + ";";
+
+        for (MethodNode method : node.methods) {
+            for (AbstractInsnNode insn : method.instructions) {
+                if (!(insn instanceof MethodInsnNode call)) continue;
+                if (call.getOpcode() != Opcodes.INVOKEVIRTUAL) continue;
+                if (!levelChunkOwner.equals(call.owner) || !fourArgDesc.equals(call.desc)) continue;
+
+                method.instructions.insertBefore(call, new org.objectweb.asm.tree.InsnNode(Opcodes.POP));
+                call.desc = threeArgDesc;
+            }
+        }
+    }
+
+    private static void patchPlayerInfoUpdateSingleEntryConstructor(ClassNode node) {
+        String packetOwner = io.lunararcdevs.lunararc.common.mod.LunarArcRemapper
+                .currentRuntimeClassName(PLAYER_INFO_PACKET_MOJANG);
+        String entryOwner = io.lunararcdevs.lunararc.common.mod.LunarArcRemapper
+                .currentRuntimeClassName(PLAYER_INFO_ENTRY_MOJANG);
+        String ctorDesc = "(Ljava/util/EnumSet;L" + entryOwner + ";)V";
+        String factoryDesc = "(Ljava/util/EnumSet;L" + entryOwner + ";)L" + packetOwner + ";";
+
+        for (MethodNode method : node.methods) {
+            for (AbstractInsnNode insn : method.instructions) {
+                if (!(insn instanceof MethodInsnNode call)) continue;
+                if (call.getOpcode() != Opcodes.INVOKESPECIAL || !"<init>".equals(call.name)) continue;
+                if (!packetOwner.equals(call.owner) || !ctorDesc.equals(call.desc)) continue;
+
+                TypeInsnNode newInsn = findMatchingNew(call);
+                if (newInsn == null) continue;
+                AbstractInsnNode dup = newInsn.getNext();
+                if (dup == null || dup.getOpcode() != Opcodes.DUP) continue;
+
+                method.instructions.remove(newInsn);
+                method.instructions.remove(dup);
+                method.instructions.set(call, new MethodInsnNode(
+                        Opcodes.INVOKESTATIC, PLAYER_INFO_COMPAT, "create", factoryDesc, false));
+            }
+        }
     }
 
     @Override
@@ -78,13 +122,15 @@ public final class LunarArcIntegratedPatcher implements PluginPatcher {
     }
 
     private static void patchWorldEditRegen(ClassNode node, ClassRepo classRepo) {
+        String serverLevel = io.lunararcdevs.lunararc.common.mod.LunarArcRemapper.currentRuntimeClassName(SERVER_LEVEL_MOJANG);
+        String regenCtorDesc = io.lunararcdevs.lunararc.common.mod.LunarArcRemapper.currentRuntimeDescriptor(REGEN_CTOR_DESC_MOJANG);
         for (MethodNode method : node.methods) {
             for (AbstractInsnNode insn : method.instructions) {
                 if (!(insn instanceof MethodInsnNode call)) continue;
 
                 if (call.getOpcode() == Opcodes.INVOKESPECIAL && "<init>".equals(call.name)) {
                     String replacement;
-                    if (SERVER_LEVEL.equals(call.owner) && REGEN_CTOR_DESC.equals(call.desc)) {
+                    if (serverLevel.equals(call.owner) && regenCtorDesc.equals(call.desc)) {
                         replacement = REGEN_LEVEL;
                     } else if (WORLDEDIT_NOOP_LISTENER.equals(call.owner) && "()V".equals(call.desc)) {
                         replacement = LUNARARC_NOOP_LISTENER;

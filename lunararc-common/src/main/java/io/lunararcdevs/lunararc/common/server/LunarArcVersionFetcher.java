@@ -52,7 +52,7 @@ public final class LunarArcVersionFetcher implements VersionFetcher {
                     .append(Component.text(TranslationManager.get(
                             "version.update.download", release.downloadUrl()), NamedTextColor.YELLOW));
         } catch (Exception e) {
-            return Component.text("Could not check for updates: " + e.getMessage(), NamedTextColor.RED);
+            return Component.text(TranslationManager.get("version.check_failed", e.getMessage()), NamedTextColor.RED);
         }
     }
 

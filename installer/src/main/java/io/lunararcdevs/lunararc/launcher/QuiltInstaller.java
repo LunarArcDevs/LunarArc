@@ -34,8 +34,16 @@ public class QuiltInstaller {
             }
         }
 
+        if (!needsInstall) {
+            String missingJar = LauncherUtils.missingManifestClassPathJar(quiltServerJar);
+            if (missingJar != null) {
+                ConsoleUI.printStep("install.quilt.reinstall_missing_jar", loaderVersion, missingJar);
+                needsInstall = true;
+            }
+        }
+
         if (needsInstall) {
-            ConsoleUI.printStep("Downloading missing libraries...");
+            ConsoleUI.printStep("install.downloading_libraries");
             if (!Files.exists(installerJar)) {
                 Downloader.download(installerUrl, installerJar);
             }
@@ -49,7 +57,7 @@ public class QuiltInstaller {
             int exitCode = process.waitFor();
 
             if (exitCode != 0) {
-                ConsoleUI.printError("Quilt installer failed with exit code: " + exitCode);
+                ConsoleUI.printError("install.quilt.failed_exit_code", exitCode);
                 return;
             }
 
@@ -59,9 +67,7 @@ public class QuiltInstaller {
             }
 
             if (!Files.exists(quiltServerJar)) {
-                ConsoleUI.printError("Quilt installer reported success but did not produce "
-                        + quiltServerJar.getFileName() + ". The output above is from the installer;"
-                        + " if it printed its usage text then the arguments it was given are wrong.");
+                ConsoleUI.printError("install.quilt.missing_output_jar", quiltServerJar.getFileName());
                 return;
             }
 

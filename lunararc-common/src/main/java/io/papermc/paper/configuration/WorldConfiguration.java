@@ -21,7 +21,23 @@ public final class WorldConfiguration {
             public int maxBlockHeight = 64;
             public int updateRadius = 2;
             public boolean lavaObscures;
-            public java.util.List<String> hiddenBlocks = java.util.List.of();
+            // Vanilla ores match real Paper's own default hidden-blocks list. Chests (vanilla and
+            // lootr's own, since this pack ships it - confirmed present via a real crash report's
+            // block_entities listing) are LunarArc's own addition: an x-ray hack that reveals ANY
+            // non-air block through walls finds loot chests exactly the same way it finds ore,
+            // and real Paper's own default list only ever covered ores, never storage.
+            public java.util.List<String> hiddenBlocks = java.util.List.of(
+                    "minecraft:coal_ore", "minecraft:deepslate_coal_ore",
+                    "minecraft:iron_ore", "minecraft:deepslate_iron_ore",
+                    "minecraft:gold_ore", "minecraft:deepslate_gold_ore",
+                    "minecraft:redstone_ore", "minecraft:deepslate_redstone_ore",
+                    "minecraft:diamond_ore", "minecraft:deepslate_diamond_ore",
+                    "minecraft:lapis_ore", "minecraft:deepslate_lapis_ore",
+                    "minecraft:emerald_ore", "minecraft:deepslate_emerald_ore",
+                    "minecraft:copper_ore", "minecraft:deepslate_copper_ore",
+                    "minecraft:nether_gold_ore", "minecraft:nether_quartz_ore", "minecraft:ancient_debris",
+                    "minecraft:chest", "minecraft:trapped_chest",
+                    "lootr:lootr_chest", "lootr:lootr_barrel");
         }
     }
 

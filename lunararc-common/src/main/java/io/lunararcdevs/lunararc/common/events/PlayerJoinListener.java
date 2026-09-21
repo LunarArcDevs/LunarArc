@@ -2,6 +2,7 @@ package io.lunararcdevs.lunararc.common.events;
 
 import io.lunararcdevs.lunararc.common.server.LunarArcVersionFetcher;
 import io.lunararcdevs.lunararc.common.server.LunarArcVersionInfo;
+import io.lunararcdevs.lunararc.i18n.TranslationManager;
 import com.mojang.authlib.GameProfile;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
@@ -45,10 +46,12 @@ public final class PlayerJoinListener {
 
     private static void notifyPlayer(Player player, LunarArcVersionFetcher.Release release) {
         if (!player.isOnline()) return;
-        player.sendMessage(Component.text("LunarArc update available", NamedTextColor.AQUA, TextDecoration.BOLD));
-        player.sendMessage(Component.text("Latest: ", NamedTextColor.WHITE)
+        player.sendMessage(Component.text(TranslationManager.get("ingame.update.available"),
+                NamedTextColor.AQUA, TextDecoration.BOLD));
+        player.sendMessage(Component.text(TranslationManager.get("ingame.update.latest"), NamedTextColor.WHITE)
                 .append(Component.text(release.version(), NamedTextColor.GREEN)));
-        player.sendMessage(Component.text("Click here to download the update", NamedTextColor.GOLD, TextDecoration.UNDERLINED)
+        player.sendMessage(Component.text(TranslationManager.get("ingame.update.download_link"),
+                        NamedTextColor.GOLD, TextDecoration.UNDERLINED)
                 .clickEvent(ClickEvent.openUrl(release.downloadUrl())));
     }
 }

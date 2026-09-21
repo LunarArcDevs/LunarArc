@@ -54,14 +54,11 @@ public class LibraryExtractor {
                 }
             }
 
-            // Only worth saying when something actually happened. On every start after the first
-            // this does no work, and a step that reports itself for doing nothing is how a startup
-            // log stops being read.
             if (extracted > 0) {
-                ConsoleUI.printSuccess("Extracted " + extracted + " runtime libraries.");
+                ConsoleUI.printSuccess("install.libraries.extracted", extracted);
             }
         } catch (Exception e) {
-            ConsoleUI.printError("Failed to extract libraries: " + e.getMessage());
+            ConsoleUI.printError("install.libraries.extract_failed", e.getMessage());
         }
     }
 }

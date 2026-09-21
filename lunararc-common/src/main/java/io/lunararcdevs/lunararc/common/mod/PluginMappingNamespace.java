@@ -35,9 +35,6 @@ public enum PluginMappingNamespace {
                     return parseDeclared(pluginFile, declared);
                 }
             }
-
-            // Paper 1.20.5+ default: Paper plugins are Mojang mapped; ordinary
-            // Bukkit/Spigot plugins are treated as Spigot mapped.
             return jar.getJarEntry("paper-plugin.yml") != null ? MOJANG : SPIGOT;
         } catch (IOException error) {
             throw new IllegalStateException("Could not inspect plugin mappings namespace for "
@@ -45,15 +42,82 @@ public enum PluginMappingNamespace {
         }
     }
 
+    private static final String CB_VERSION_MARKER = "org/bukkit/craftbukkit/v";
+    private static final String NMS_MARKER = "net/minecraft/";
+    private static final java.util.regex.Pattern CB_VERSION = java.util.regex.Pattern.compile("v\\d+_\\d+_R\\d+");
+
+    public static String detectOlderNmsTarget(File pluginFile, String currentCraftBukkitVersion) {
+        java.util.Set<String> versions = new java.util.LinkedHashSet<>();
+        boolean usesNms = false;
+        try (JarFile jar = new JarFile(pluginFile)) {
+            for (java.util.Enumeration<java.util.jar.JarEntry> entries = jar.entries(); entries.hasMoreElements(); ) {
+                java.util.jar.JarEntry entry = entries.nextElement();
+                if (entry.isDirectory() || !entry.getName().endsWith(".class")) continue;
+                String text;
+                try (java.io.InputStream in = jar.getInputStream(entry)) {
+                    text = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.ISO_8859_1);
+                }
+                usesNms |= text.contains(NMS_MARKER);
+                for (int at = text.indexOf(CB_VERSION_MARKER); at >= 0; at = text.indexOf(CB_VERSION_MARKER, at + 1)) {
+                    java.util.regex.Matcher matcher = CB_VERSION.matcher(text.substring(at + CB_VERSION_MARKER.length() - 1,
+                            Math.min(text.length(), at + CB_VERSION_MARKER.length() + 12)));
+                    if (!matcher.lookingAt()) continue;
+                    if (matcher.group().equals(currentCraftBukkitVersion)) return null;
+                    versions.add(matcher.group());
+                }
+            }
+        } catch (IOException | RuntimeException ignored) {
+            return null;
+        }
+        if (!usesNms || versions.isEmpty()) return null;
+        return versions.stream().max(java.util.Comparator.comparingLong(PluginMappingNamespace::versionKey)).orElse(null);
+    }
+
+    private static long versionKey(String version) {
+        String[] parts = version.substring(1).split("_R?");
+        long key = 0;
+        for (String part : parts) key = key * 1000 + Integer.parseInt(part);
+        return key;
+    }
+
+    public static LegacyNmsTranslator legacyTranslatorFor(File pluginFile, String pluginName, String apiVersion) {
+        try {
+            if (!isOlderThanServerApi(apiVersion)) return null;
+            String current = io.lunararcdevs.lunararc.common.server.LunarArcPluginFixManager.getNMSVersion();
+            String target = detectOlderNmsTarget(pluginFile, current);
+            if (target == null) return null;
+            org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger("LunarArc");
+            LegacyNmsTranslator translator = LegacyNmsTranslator.forVersion(target);
+            if (translator != null) {
+                logger.info("{} was built against CraftBukkit {}; translating its net.minecraft references to {}.",
+                        pluginName, target, current);
+                return translator;
+            }
+            logger.warn("{} was built against CraftBukkit {} but this server is {}. Its Bukkit API use is fine, but "
+                            + "the net.minecraft internals it references changed between those versions and no "
+                            + "mapping set is available for {}, so those calls may fail with NoSuchMethodError or "
+                            + "NoClassDefFoundError.",
+                    pluginName, target, current, target);
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static boolean isOlderThanServerApi(String apiVersion) {
+        if (apiVersion == null || apiVersion.isBlank()) return true;
+        String[] parts = apiVersion.trim().split("\\.");
+        if (parts.length < 2) return false;
+        try {
+            return Integer.parseInt(parts[0]) == 1 && Integer.parseInt(parts[1]) < 21;
+        } catch (NumberFormatException notNumeric) {
+            return false;
+        }
+    }
+
     private static PluginMappingNamespace parseDeclared(File pluginFile, String value) {
         return switch (value.trim().toLowerCase(Locale.ROOT)) {
-            // mojang+yarn differs from mojang only in which parameter names the jar carries, which
-            // nothing here reads. Both say the NMS references are already Mojang named.
             case MOJANG_NAMESPACE, MOJANG_PLUS_YARN_NAMESPACE -> MOJANG;
             case SPIGOT_NAMESPACE -> SPIGOT;
-            // Paper refuses an unknown namespace rather than guessing at it, and so do we: a jar
-            // naming a namespace we cannot remap from would be silently mangled by the wrong
-            // mapping set, which is worse than not loading. The list is the whole set Paper knows.
             default -> throw new IllegalArgumentException("Unsupported " + MANIFEST_ATTRIBUTE
                     + " '" + value + "' in " + pluginFile.getName()
                     + "; LunarArc 1.21.1 supports '" + MOJANG_NAMESPACE + "', '"

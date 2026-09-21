@@ -96,6 +96,10 @@ public final class LunarArcVersionInfo {
         return property("buildNumber", "local");
     }
 
+    public static String buildName() {
+        return property("buildName", "unknown");
+    }
+
     public static OptionalInt dataVersion() {
         String value = property("dataVersion", "");
         if (value.isBlank()) {

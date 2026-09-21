@@ -31,7 +31,8 @@ public final class LunarArcAntiXrayEngine {
     private final Set<BlockState> hiddenStates;
 
     private LunarArcAntiXrayEngine(ServerLevel level) {
-        var config = io.papermc.paper.configuration.WorldConfiguration.forLevel(level).anticheat.antiXray;
+        var config = ((io.lunararcdevs.lunararc.common.bridge.LevelBridge) level)
+                .lunararc$getPaperConfiguration().anticheat.antiXray;
         boolean configuredEnabled = config.enabled;
         int engineMode = config.engineMode;
         if (configuredEnabled && engineMode != 1) {
@@ -92,7 +93,91 @@ public final class LunarArcAntiXrayEngine {
     }
 
     public LevelChunkSection[] obfuscateForSend(LevelChunk chunk) {
-        return chunk.getSections();
+        if (!enabled || hiddenStates.isEmpty()) return chunk.getSections();
+
+        LevelChunkSection[] real = chunk.getSections();
+        int minBuildHeight = chunk.getMinBuildHeight();
+        LevelChunkSection[] result = null;
+        for (int i = 0; i < real.length; i++) {
+            int sectionMinY = minBuildHeight + (i << 4);
+            if (sectionMinY > maxBlockHeight) continue;
+            LevelChunkSection obfuscated = obfuscateSection(chunk, real, i, sectionMinY);
+            if (obfuscated == null) continue;
+            if (result == null) result = real.clone();
+            result[i] = obfuscated;
+        }
+        return result == null ? real : result;
+    }
+
+    private LevelChunkSection obfuscateSection(LevelChunk chunk, LevelChunkSection[] real, int index, int sectionMinY) {
+        LevelChunkSection section = real[index];
+        if (section.hasOnlyAir()) return null;
+
+        BlockState decoy = findDecoyState(section);
+        if (decoy == null) return null;
+
+        LevelChunkSection copy = null;
+        for (int localY = 0; localY < 16; localY++) {
+            int worldY = sectionMinY + localY;
+            if (worldY > maxBlockHeight) break;
+            for (int localX = 0; localX < 16; localX++) {
+                for (int localZ = 0; localZ < 16; localZ++) {
+                    BlockState state = section.getBlockState(localX, localY, localZ);
+                    if (!isHidden(state)) continue;
+                    int worldX = (chunk.getPos().x << 4) + localX;
+                    int worldZ = (chunk.getPos().z << 4) + localZ;
+                    if (isExposed(chunk, real, index, localX, localY, localZ, worldX, worldY, worldZ)) continue;
+                    if (copy == null) {
+                        copy = new LevelChunkSection(section.getStates().copy(), section.getBiomes());
+                    }
+                    copy.setBlockState(localX, localY, localZ, decoy, false);
+                }
+            }
+        }
+        return copy;
+    }
+
+    private BlockState findDecoyState(LevelChunkSection section) {
+        for (int localY = 0; localY < 16; localY++) {
+            for (int localX = 0; localX < 16; localX++) {
+                for (int localZ = 0; localZ < 16; localZ++) {
+                    BlockState state = section.getBlockState(localX, localY, localZ);
+                    if (!isHidden(state) && isSolidForReveal(state)) return state;
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean isExposed(LevelChunk chunk, LevelChunkSection[] real, int index,
+            int localX, int localY, int localZ, int worldX, int worldY, int worldZ) {
+        // Vertical neighbours: same chunk column, adjacent section when crossing a boundary.
+        if (!isNeighborSolid(real, index, localX, localY - 1, localZ, chunk, worldX, worldY - 1, worldZ)) return true;
+        if (!isNeighborSolid(real, index, localX, localY + 1, localZ, chunk, worldX, worldY + 1, worldZ)) return true;
+        // Horizontal neighbours: same section unless at the chunk edge.
+        if (!isNeighborSolid(real, index, localX - 1, localY, localZ, chunk, worldX - 1, worldY, worldZ)) return true;
+        if (!isNeighborSolid(real, index, localX + 1, localY, localZ, chunk, worldX + 1, worldY, worldZ)) return true;
+        if (!isNeighborSolid(real, index, localX, localY, localZ - 1, chunk, worldX, worldY, worldZ - 1)) return true;
+        if (!isNeighborSolid(real, index, localX, localY, localZ + 1, chunk, worldX, worldY, worldZ + 1)) return true;
+        return false;
+    }
+
+    private boolean isNeighborSolid(LevelChunkSection[] real, int index, int localX, int localY, int localZ,
+            LevelChunk chunk, int worldX, int worldY, int worldZ) {
+        if (localX >= 0 && localX <= 15 && localZ >= 0 && localZ <= 15) {
+            if (localY >= 0 && localY <= 15) {
+                return isSolidForReveal(real[index].getBlockState(localX, localY, localZ));
+            }
+            int neighborIndex = localY < 0 ? index - 1 : index + 1;
+            if (neighborIndex < 0 || neighborIndex >= real.length) return true; // world floor/ceiling
+            LevelChunkSection neighborSection = real[neighborIndex];
+            int neighborLocalY = localY < 0 ? 15 : 0;
+            if (neighborSection.hasOnlyAir()) return false;
+            return isSolidForReveal(neighborSection.getBlockState(localX, neighborLocalY, localZ));
+        }
+        LevelChunk neighborChunk = chunk.getLevel().getChunkSource().getChunkNow(worldX >> 4, worldZ >> 4);
+        if (neighborChunk == null) return true;
+        return isSolidForReveal(neighborChunk.getBlockState(new BlockPos(worldX, worldY, worldZ)));
     }
 
     public void onBlockChange(ServerLevel level, BlockPos pos, BlockState newState, BlockState oldState) {
@@ -110,9 +195,6 @@ public final class LunarArcAntiXrayEngine {
 
     private void revealNear(ServerLevel level, BlockPos pos) {
         for (BlockPos neighbor : neighborsWithinTwo(pos)) {
-            // getBlockStateIfLoaded is a Paper addition, not vanilla - getChunkNow is the plain
-            // vanilla way to read a chunk only if it is already loaded, without loading/generating
-            // it (confirmed via CraftWorld's own getChunkNow(x, z) usage).
             net.minecraft.world.level.chunk.LevelChunk chunk =
                     level.getChunkSource().getChunkNow(neighbor.getX() >> 4, neighbor.getZ() >> 4);
             BlockState state = chunk == null ? null : chunk.getBlockState(neighbor);

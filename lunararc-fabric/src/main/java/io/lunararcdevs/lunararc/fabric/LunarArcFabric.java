@@ -3,6 +3,7 @@ package io.lunararcdevs.lunararc.fabric;
 import io.lunararcdevs.lunararc.common.LunarArcClientSideGuard;
 import io.lunararcdevs.lunararc.common.mod.server.LunarArcServer;
 import io.lunararcdevs.lunararc.fabric.event.FabricBlockBreakEvents;
+import io.lunararcdevs.lunararc.fabric.permissions.FabricPermissionsApi;
 import io.lunararcdevs.lunararc.fabric.server.FabricServerLifecycle;
 import io.lunararcdevs.lunararc.fabric.network.FabricChannelRegistration;
 import net.fabricmc.api.EnvType;
@@ -24,5 +25,6 @@ public final class LunarArcFabric implements ModInitializer {
         FabricServerLifecycle.register();
         FabricChannelRegistration.register();
         FabricBlockBreakEvents.register();
+        FabricPermissionsApi.register();
     }
 }

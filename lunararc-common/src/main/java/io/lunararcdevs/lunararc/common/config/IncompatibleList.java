@@ -46,15 +46,7 @@ public final class IncompatibleList {
     }
 
     private static void report(List<Detected> detected) {
-        // Each entry's own 'crash' (from plugins.json/mods.json) overrides the operator's global
-        // incompatible.crash default when set; if any detected item still resolves to crash=true,
-        // the whole batch blocks startup rather than silently continuing past a serious one.
-        boolean crash = detected.stream()
-                .anyMatch(item -> item.crash() != null ? item.crash() : LunarArcConfig.isIncompatibleCrashEnabled());
-        // Log bots: match the tag on this per-item line - "[LunarArc/Incompatible] type=... id=...
-        // name="..." reason="..."" - one structured, key=value line per detected item, present at
-        // both levels below. The count line right after it ("[LunarArc/IncompatibleFatal] count=N"
-        // vs "[LunarArc/IncompatibleWarning] count=N") tells you which of the two happened.
+        boolean crash = detected.stream().anyMatch(item -> item.crash() == null || item.crash());
         for (Detected item : detected) {
             log(crash, "[LunarArc/Incompatible] type={} id={} name=\"{}\"{} reason=\"{}\"",
                     item.type(), item.id(), item.displayName().replace("\"", "'"),
@@ -77,12 +69,11 @@ public final class IncompatibleList {
             log(crash, "  Reason: {}", item.reason());
         }
         if (crash) {
-            LOGGER.error("Server startup has been stopped. Remove the incompatible item(s) and restart,");
-            LOGGER.error("or set incompatible.crash=false in lunararc.conf to only warn instead.");
+            LOGGER.error("Server startup has been stopped. Remove the incompatible item(s) and restart.");
             LOGGER.error("============================================================");
             throw new IncompatibleSoftwareException(crashMessage(detected));
         }
-        LOGGER.warn("incompatible.crash=false in lunararc.conf - continuing startup anyway.");
+        LOGGER.warn("This item is marked warn-only - continuing startup anyway.");
         LOGGER.warn("============================================================");
     }
 
@@ -163,7 +154,6 @@ public final class IncompatibleList {
         return List.copyOf(entries);
     }
 
-    /** crash is null when the entry doesn't override the operator's global incompatible.crash setting. */
     public record Entry(String name, String version, String reason, Boolean crash) {
     }
 

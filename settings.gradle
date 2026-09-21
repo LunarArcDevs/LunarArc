@@ -10,7 +10,6 @@ pluginManagement {
 }
 
 rootProject.name = 'LunarArc'
-
 // lunararc-api now lives at github.com/LunarArcDevs/api, pulled in via JitPack.
 include 'lunararc-common'
 

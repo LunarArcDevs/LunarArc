@@ -308,9 +308,9 @@ public class CraftItemMeta implements ItemMeta, org.bukkit.inventory.meta.Damage
 
     private void applyEnchantments(ItemStack nms) {
         try {
-            Class<?> itemEnchantments = Class.forName("net.minecraft.world.item.enchantment.ItemEnchantments");
+            Class<?> itemEnchantments = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.world.item.enchantment.ItemEnchantments");
             Object empty = itemEnchantments.getField("EMPTY").get(null);
-            Class<?> mutableClass = Class.forName("net.minecraft.world.item.enchantment.ItemEnchantments$Mutable");
+            Class<?> mutableClass = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.world.item.enchantment.ItemEnchantments$Mutable");
             Object mutable = mutableClass.getConstructor(itemEnchantments).newInstance(empty);
 
             Object minecraftServer = ((org.bukkit.craftbukkit.CraftServer) org.bukkit.Bukkit.getServer()).getServer();
@@ -353,7 +353,7 @@ public class CraftItemMeta implements ItemMeta, org.bukkit.inventory.meta.Damage
             return;
         }
         try {
-            Class<?> modifiersClass = Class.forName("net.minecraft.world.item.component.ItemAttributeModifiers");
+            Class<?> modifiersClass = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.world.item.component.ItemAttributeModifiers");
             Object builder = modifiersClass.getMethod("builder").invoke(null);
 
             Object minecraftServer = ((org.bukkit.craftbukkit.CraftServer) org.bukkit.Bukkit.getServer()).getServer();
@@ -397,7 +397,7 @@ public class CraftItemMeta implements ItemMeta, org.bukkit.inventory.meta.Damage
     }
 
     private static Object toMinecraftSlotGroup(EquipmentSlotGroup group) throws ReflectiveOperationException {
-        Class<?> nmsGroup = Class.forName("net.minecraft.world.entity.EquipmentSlotGroup");
+        Class<?> nmsGroup = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.world.entity.EquipmentSlotGroup");
         String requested = group == null ? "ANY" : group.toString().toUpperCase(Locale.ROOT)
                 .replace('-', '_').replace(' ', '_');
         try {
@@ -503,7 +503,7 @@ public class CraftItemMeta implements ItemMeta, org.bukkit.inventory.meta.Damage
             if (persistentDataContainer.isEmpty()) root.remove("PublicBukkitValues");
             else root.put("PublicBukkitValues", persistentDataContainer.toTag());
 
-            Class<?> customDataClass = Class.forName("net.minecraft.world.item.component.CustomData");
+            Class<?> customDataClass = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.world.item.component.CustomData");
             Object replacement = customDataClass.getMethod("of", net.minecraft.nbt.CompoundTag.class).invoke(null, root);
 
             for (java.lang.reflect.Method method : nms.getClass().getMethods()) {

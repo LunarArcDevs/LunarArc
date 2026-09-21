@@ -6,6 +6,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "compat.SablePersistentEntitySectionManagerStopTrackingGuardMixin",
+    "compat.SableSpectatorTrackingClearMixin",
     "permission.PermissionAPIMixin",
     "core.server.MinecraftServerMixin_NeoForge",
     "bukkit.CraftWorldMixin_NeoForge",
