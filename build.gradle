@@ -62,6 +62,10 @@ allprojects {
     }
 
     repositories {
+        maven {
+            url 'https://maven.quiltmc.org/repository/release/'
+            content { includeGroupByRegex 'org\\.quiltmc(\\..*)?' }
+        }
         mavenCentral()
         maven { url 'https://maven.minecraftforge.net/' }
         maven { url 'https://maven.neoforged.net/releases' }
@@ -74,6 +78,13 @@ allprojects {
         maven {
             url 'https://jitpack.io'
             content { includeGroup 'com.github.LunarArcDevs' }
+        }
+    }
+
+    repositories.all { repo ->
+        if (repo instanceof MavenArtifactRepository && repo.url.scheme in ['http', 'https']
+                && repo.url.host != 'maven.quiltmc.org') {
+            repo.content { excludeGroupByRegex 'org\\.quiltmc(\\..*)?' }
         }
     }
 
