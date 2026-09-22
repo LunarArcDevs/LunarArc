@@ -3,14 +3,14 @@
 [![Downloads count](https://img.shields.io/github/downloads/LunarArcDevs/LunarArc/total?style=for-the-badge)](https://lunararc.lunararcdevs.com)  ![License](https://img.shields.io/github/license/LunarArcDevs/LunarArc?style=for-the-badge) ![GitHub forks](https://img.shields.io/github/forks/LunarArcDevs/LunarArc?style=for-the-badge&logo=github)
 
 
-An experimental hybrid Minecraft server compatibility layer. **Forge/NeoForge/Fabric/Quilt**, while LunarArc layers Bukkit/Spigot/Paper plugin compatibility on top with concrete Craft-style adapters and targeted mixins. Paper is an API/behaviour contract and merge reference, not a second shaded server runtime.
+LunarArc is a hybrid Minecraft server compatibility layer. **Forge/NeoForge/Fabric/Quilt**, while LunarArc layers Bukkit/Spigot/Paper plugin compatibility on top with concrete Craft-style adapters and targeted mixins. Paper is an API/behaviour contract and merge reference, not a second shaded server runtime.
 
 LunarArc also provides native [EssentialsX](https://essentialsx.net) integration for modded blocks and items. Modded registry entries are automatically exposed to EssentialsX, allowing commands such as `/give`, `/item`, and `/i` to work with modded content **out of the box, with no additional integration plugin required**.
 
 
 |        Release        |  Forge  | NeoForge |  Fabric  |  QuiltMC  | Status |                                                                                                                                              Build                                                           
 |:--------------------:|:-------:|:--------:|:--------:|:--------:|:------:|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
-| Trial Zenith (1.21.1) | 52.1.16 |21.1.251 |  0.19.5  |  0.30.1  | ACTIVE | [![1.21.1 Status](https://img.shields.io/github/actions/workflow/status/LunarArcDevs/LunarArc/gradle.yml?branch=Trial-Zenith&style=for-the-badge)](https://github.com/LunarArcDevs/LunarArc/actions?query=branch%3ATrial-Zenith) |
+| Chaos (26.2) | 65.1.3 | 26.2.0.88 |  0.19.5  |  0.30.1  | ACTIVE | [![26.2 Status](https://img.shields.io/github/actions/workflow/status/LunarArcDevs/LunarArc/gradle.yml?branch=Chaos&style=for-the-badge)](https://github.com/LunarArcDevs/LunarArc/actions?query=branch%3AChaos) |
 
 ## Installing
 
