@@ -138,6 +138,21 @@ final class LoaderSameJvmLaunch {
         }
 
         gameArgs.add("--nogui");
+        if ("Forge".equals(loaderLabel)) {
+            String selfEntry = selfPath.toAbsolutePath().toString();
+            List<String> forgeEntries = new ArrayList<>(legacyClassPath.stream()
+                    .filter(entry -> !entry.equals(selfEntry))
+                    .toList());
+            try {
+                Path locatorJar = workingDir.resolve(".lunararc").resolve("mod_file").resolve("forge-locator.jar");
+                LunarArcRuntime.extractNestedJarEntry(selfPath, "forge-locator.jar", locatorJar);
+                forgeEntries.add(locatorJar.toAbsolutePath().toString());
+            } catch (Exception e) {
+                System.err.println("[LunarArc] Warning: could not extract the Forge mod locator jar - "
+                        + "Forge will not discover LunarArc as a mod: " + e.getMessage());
+            }
+            System.setProperty("java.class.path", String.join(File.pathSeparator, forgeEntries));
+        }
         invokeMain(mainClass, gameArgs, loaderLabel);
     }
 

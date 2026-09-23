@@ -193,3 +193,6 @@ accessible method net/minecraft/server/level/ServerBossEvent broadcast (Ljava/ut
 accessible field net/minecraft/world/level/storage/PrimaryLevelData settings Lnet/minecraft/world/level/LevelSettings;
 # doRegen also reaches MinecraftServer's own executor field directly, same reasoning.
 accessible field net/minecraft/server/MinecraftServer executor Ljava/util/concurrent/Executor;
+# Paper double-chest donor classes read both halves of a CompoundContainer directly.
+accessible field net/minecraft/world/CompoundContainer container1 Lnet/minecraft/world/Container;
+accessible field net/minecraft/world/CompoundContainer container2 Lnet/minecraft/world/Container;

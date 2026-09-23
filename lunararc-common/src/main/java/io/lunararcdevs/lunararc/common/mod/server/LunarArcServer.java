@@ -33,6 +33,7 @@ public final class LunarArcServer {
         // the earliest point lunararc.conf can be read - relying solely on MinecraftServerMixin's
         // later load() would leave incompatible.crash at its default for that screening pass.
         io.lunararcdevs.lunararc.common.config.LunarArcConfig.load();
+        io.lunararcdevs.lunararc.common.server.LunarArcPaperServiceBootstrap.ensureInstalled();
         LOGGER.debug("[LunarArc] Platform: {}", name);
     }
 

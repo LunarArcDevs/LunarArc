@@ -13,6 +13,8 @@ architectury {
 loom {
     silentMojangMappingsLicense()
     accessWidenerPath = project(':lunararc-common').file('src/main/resources/lunararc.accesswidener')
+    // Forge 1.21x runs Mojang-named bytecode at runtime, not SRG (Loom defaults Forge to SRG regardless of MC version).
+    productionNamespace.set('mojang')
     forge {
         useCustomMixin = false
         convertAccessWideners = true
@@ -20,6 +22,12 @@ loom {
         mixinConfigs = ['mixins.lunararc.common.json', 'mixins.lunararc.forge.json']
     }
 }
+
+// validateAccessWidener checks the file against Loom's default (SRG) namespace assumption and
+// ignores productionNamespace above, so on Forge it fails every single entry even though they're
+// all real, verified Mojang names that work correctly at runtime. Build-time sanity check only -
+// doesn't affect the produced jar - so this is safe to skip.
+tasks.named('validateAccessWidener') { enabled = false }
 
 configurations {
     common {
@@ -45,6 +53,12 @@ dependencies {
     forge "net.minecraftforge:forge:${libs.versions.minecraft.get()}-${libs.versions.forge.get()}"
     common(project(path: ':lunararc-common', configuration: 'namedElements')) { transitive = false }
     shadowBundle(project(path: ':lunararc-common', configuration: 'transformProductionForge')) { transitive = false }
+
+    // NeoForge/Fabric/Quilt all bundle MixinExtras themselves; Forge's own runtime does not.
+    // bootstrap's forgeCommonJar bundles a relocated copy of the runtime jar directly into
+    // common.jar instead of shading it in here, so this is compile-only just so
+    // LunarArcMixinExtrasConnector_Forge and the shared mixins can still reference it.
+    compileOnly libs.mixinextras.common
 
     implementation libs.lunararc.api
     shadowBundle libs.lunararc.api

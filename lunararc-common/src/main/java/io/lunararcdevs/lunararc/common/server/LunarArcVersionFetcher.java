@@ -102,25 +102,12 @@ public final class LunarArcVersionFetcher implements VersionFetcher {
         return !current.isBlank() && (current.equals(tag) || tag.endsWith(current) || current.endsWith(tag));
     }
 
-    private static boolean hasPreviousBuild(String buildNumber) {
-        if (buildNumber == null || buildNumber.isBlank()
-                || "local".equalsIgnoreCase(buildNumber)
-                || "unknown".equalsIgnoreCase(buildNumber)) {
-            return false;
-        }
-        try {
-            return Integer.parseInt(buildNumber) > 0;
-        } catch (NumberFormatException ignored) {
-            return false;
-        }
-    }
-
     private static Component latestVersionMessage(String version) {
         Component message = Component.text(TranslationManager.get("version.latest", version), NamedTextColor.GREEN);
-        String buildNumber = LunarArcVersionInfo.buildNumber();
-        if (hasPreviousBuild(buildNumber)) {
+        String previous = LunarArcWorldVersionStamp.previousVersion();
+        if (!previous.isBlank() && !previous.equals(LunarArcVersionInfo.lunarArcVersion())) {
             message = message.append(Component.newline())
-                    .append(Component.text(TranslationManager.get("version.previous", buildNumber), NamedTextColor.GRAY));
+                    .append(Component.text(TranslationManager.get("version.previous", previous), NamedTextColor.GRAY));
         }
         return message;
     }

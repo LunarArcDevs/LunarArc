@@ -18,6 +18,7 @@ import java.util.Properties;
 public final class UpdateChecker {
     private static final String REPO = "LunarArcDevs/LunarArc";
     private static final String API_URL = "https://api.github.com/repos/" + REPO + "/releases";
+    private static final String NO_UPDATE_MESSAGE = "No new updates available, You're up to date";
     private static final int CONNECT_TIMEOUT_MILLIS = 3000;
     private static final int READ_TIMEOUT_MILLIS = 3000;
 
@@ -165,7 +166,6 @@ public final class UpdateChecker {
                 if (!sameVersion(currentVersion, tagName, name, buildName)) {
                     LATEST_VERSION = tagName;
                     UPDATE_URL = htmlUrl;
-
                     if (!alreadyReported(currentVersion, tagName)) {
                         say(TranslationManager.get("update.available", buildName, tagName, currentVersion));
                         say(TranslationManager.get("update.download", htmlUrl));
@@ -173,13 +173,13 @@ public final class UpdateChecker {
                 } else {
                     LATEST_VERSION = null;
                     UPDATE_URL = null;
-                    say(TranslationManager.get("update.none"));
+                    say(NO_UPDATE_MESSAGE);
                 }
                 break;
             }
 
             if (!foundMatch) {
-                say(TranslationManager.get("update.none"));
+                say(NO_UPDATE_MESSAGE);
             }
         } catch (Exception ignored) {
 
@@ -217,9 +217,7 @@ public final class UpdateChecker {
         }
         return value.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
-
-    /** Whether this exact (current, latest) pairing was already recorded from a previous run - i.e.
-     *  the user has already been shown this update notice at least once and just hasn't acted on it. */
+    
     private static boolean alreadyReported(String currentVersion, String tagName) {
         try {
             Path configPath = Paths.get("lunararc.conf");

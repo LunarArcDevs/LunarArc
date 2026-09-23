@@ -241,6 +241,9 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
         String mapped = table.get(new MemberKey(mojangOwner, mojangName, mojangDescriptor));
         if (mapped != null) return mapped;
         if (!allowUniqueNameFallback) return null;
+        if (namesRuntimeMember(resolveRuntimeClassForMojang(mojangOwner), mojangName, method)) {
+            return null;
+        }
         Map<MemberNameKey, String> names = method ? INTERMEDIARY_METHOD_NAME_MAP : INTERMEDIARY_FIELD_NAME_MAP;
         String unique = names.get(new MemberNameKey(mojangOwner, mojangName));
         return unique != null && !AMBIGUOUS.equals(unique) ? unique : null;
@@ -874,9 +877,13 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
         String resolved = lookupRuntimeMember(runtimeOwner, spigotName, method);
         if (resolved != null) return resolved;
         if (isNmsRuntimeClass(runtimeOwner) && !namesRuntimeMember(runtimeOwner, spigotName, method)) {
-            LOGGER.warn("No reflective mapping found for {} {}#{} — a plugin's reflective lookup is "
-                            + "likely to throw NoSuchFieldException/NoSuchMethodException.",
-                    method ? "method" : "field", runtimeOwner.getName(), spigotName);
+            if (io.lunararcdevs.lunararc.common.LunarArcDebug.REFLECT) {
+                LOGGER.warn("No reflective mapping found for {} {}#{} — a plugin's reflective lookup is "
+                                + "likely to throw NoSuchFieldException/NoSuchMethodException.",
+                        method ? "method" : "field", runtimeOwner.getName(), spigotName);
+            } else {
+                io.lunararcdevs.lunararc.common.LunarArcDebug.hiddenLookupFailure(LOGGER);
+            }
         }
         return spigotName;
     }
@@ -924,9 +931,13 @@ public class LunarArcRemapper extends org.objectweb.asm.commons.Remapper {
         String resolved = lookupRuntimeMethod(runtimeOwner, spigotName, parameterTypes, parameterDescriptor);
         if (resolved != null) return resolved;
         if (isNmsRuntimeClass(runtimeOwner) && !namesRuntimeMember(runtimeOwner, spigotName, true)) {
-            LOGGER.warn("No reflective mapping found for method {}#{}{} — a plugin's reflective lookup is "
-                            + "likely to throw NoSuchMethodException.",
-                    runtimeOwner.getName(), spigotName, parameterDescriptor == null ? "(*)" : parameterDescriptor);
+            if (io.lunararcdevs.lunararc.common.LunarArcDebug.REFLECT) {
+                LOGGER.warn("No reflective mapping found for method {}#{}{} — a plugin's reflective lookup is "
+                                + "likely to throw NoSuchMethodException.",
+                        runtimeOwner.getName(), spigotName, parameterDescriptor == null ? "(*)" : parameterDescriptor);
+            } else {
+                io.lunararcdevs.lunararc.common.LunarArcDebug.hiddenLookupFailure(LOGGER);
+            }
         }
         return spigotName;
     }

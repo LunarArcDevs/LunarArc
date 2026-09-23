@@ -2,6 +2,7 @@ package io.lunararcdevs.lunararc.forge.network;
 
 import io.lunararcdevs.lunararc.common.bridge.EntityBridge;
 import io.lunararcdevs.lunararc.common.bridge.ServerCommonPacketListenerBridge;
+import io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge;
 import io.lunararcdevs.lunararc.common.network.LunarArcRawPayload;
 import io.lunararcdevs.lunararc.common.network.LunarArcPluginChannelPolicy;
 import io.lunararcdevs.lunararc.forge.bridge.ForgeNetworkRegistryBridge;
@@ -11,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.network.CustomPayloadEvent;
 import net.minecraftforge.network.ChannelBuilder;
@@ -28,7 +30,7 @@ public final class ForgePluginMessaging {
 
     public static void ensureChannel(String channel) {
         String corrected = LunarArcPluginChannelPolicy.correctedChannel(channel);
-        ResourceLocation id = ResourceLocation.tryParse(corrected);
+        ResourceLocation id = tryParse(corrected);
         if (id == null || CHANNELS.containsKey(id) || BLOCKED.contains(id)) return;
 
         synchronized (ForgePluginMessaging.class) {
@@ -57,16 +59,16 @@ public final class ForgePluginMessaging {
 
     public static boolean sendIfManaged(CraftPlayer player, Plugin plugin, String channel, byte[] message) {
         String corrected = LunarArcPluginChannelPolicy.correctedChannel(channel);
-        ResourceLocation id = ResourceLocation.tryParse(corrected);
+        ResourceLocation id = tryParse(corrected);
         if (id == null) return false;
         EventNetworkChannel nativeChannel = CHANNELS.get(id);
         if (nativeChannel == null && !BLOCKED.contains(id)) return false;
 
         LunarArcPluginChannelPolicy.validateManagedOutbound(player, plugin, channel, message);
-        if (nativeChannel == null || player.getHandle().connection == null) return true;
+        Object connection = connectionOf(player.getHandle());
+        if (nativeChannel == null || connection == null) return true;
 
-        ServerCommonPacketListenerBridge bridge =
-                (ServerCommonPacketListenerBridge) (Object) player.getHandle().connection;
+        ServerCommonPacketListenerBridge bridge = (ServerCommonPacketListenerBridge) connection;
         if (!LunarArcPluginChannelPolicy.clientRegistered(player, corrected)) return true;
 
         nativeChannel.send(new FriendlyByteBuf(Unpooled.wrappedBuffer(message)), bridge.lunararc$getConnection());
@@ -87,8 +89,35 @@ public final class ForgePluginMessaging {
             org.bukkit.entity.Entity bukkit = ((EntityBridge) (Object) sender).lunararc$getBukkitEntity();
             if (bukkit instanceof Player player) {
                 io.lunararcdevs.lunararc.common.network.LunarArcPluginMessageDispatcher
-                        .dispatch(sender.server, player, id, data);
+                        .dispatch(serverOf(sender), player, id, data);
             }
         });
+    }
+
+    // Loom compiles Forge against SRG names; these are all real Mojang names that never resolve
+    // directly here, so go through the reflection bridge instead.
+    private static ResourceLocation tryParse(String value) {
+        try {
+            return (ResourceLocation) LunarArcReflectionBridge
+                    .getMethod(ResourceLocation.class, "tryParse", new Class<?>[]{String.class}).invoke(null, value);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Unable to parse resource location " + value, e);
+        }
+    }
+
+    private static Object connectionOf(ServerPlayer player) {
+        try {
+            return LunarArcReflectionBridge.getField(player.getClass(), "connection").get(player);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Unable to resolve the player's connection", e);
+        }
+    }
+
+    private static MinecraftServer serverOf(ServerPlayer player) {
+        try {
+            return (MinecraftServer) LunarArcReflectionBridge.getField(player.getClass(), "server").get(player);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Unable to resolve the player's server", e);
+        }
     }
 }

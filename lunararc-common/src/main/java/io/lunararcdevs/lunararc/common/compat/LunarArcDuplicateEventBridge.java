@@ -1,5 +1,6 @@
 package io.lunararcdevs.lunararc.common.compat;
 
+import io.lunararcdevs.lunararc.common.LunarArcDebug;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
@@ -33,17 +34,21 @@ public final class LunarArcDuplicateEventBridge {
                     Class<?> paramType = method.getParameterTypes()[0];
                     if (!paramType.getSimpleName().equals(simpleEventClassName)) continue;
                     candidateMethodCount++;
-                    LOGGER.info("DEBUG candidate: listener={} method={} paramType={} (identity={}) sameAsAlreadyFired={}",
-                            listener.getClass().getName(), method.getName(), paramType.getName(),
-                            System.identityHashCode(paramType), paramType == alreadyFired);
+                    if (LunarArcDebug.DISMOUNT) {
+                        LunarArcDebug.dismount("candidate: listener={} method={} paramType={} (identity={}) sameAsAlreadyFired={}",
+                                listener.getClass().getName(), method.getName(), paramType.getName(),
+                                System.identityHashCode(paramType), paramType == alreadyFired);
+                    }
                     if (paramType == alreadyFired) continue;
                     if (!invoked.add(method)) continue;
                     invoke(method, listener, paramType, constructorArgs);
                 }
             }
         }
-        LOGGER.info("DEBUG scan complete: handlerLists={} listeners={} candidateMethods={} invoked={}",
-                handlerListCount, listenerCount, candidateMethodCount, invoked.size());
+        if (LunarArcDebug.DISMOUNT) {
+            LunarArcDebug.dismount("scan complete: handlerLists={} listeners={} candidateMethods={} invoked={}",
+                    handlerListCount, listenerCount, candidateMethodCount, invoked.size());
+        }
     }
 
     private static void invoke(Method method, Listener listener, Class<?> eventClass, Object[] args) {

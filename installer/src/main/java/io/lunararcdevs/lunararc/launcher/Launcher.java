@@ -9,9 +9,6 @@ import java.util.Properties;
 import java.util.Scanner;
 
 public class Launcher {
-    // Shared and deliberately never closed: Scanner.close() on a System.in-backed Scanner closes
-    // System.in itself, and both checkEula() and the platform prompt below may need to read from
-    // it in the same run - closing after the first read would silently break the second.
     private static Scanner consoleScanner;
 
     private static Scanner console() {
@@ -20,13 +17,8 @@ public class Launcher {
     }
 
     public static void main(String[] args) {
-        // Log4j2 registers its own JVM shutdown hook that closes every appender, independently of
-        // and unsynchronized with vanilla's own "Server Shutdown Thread" hook (which correctly waits
-        // for the current tick/autosave/stopServer() to finish first) - the two race, and Log4j's can
-        // close logs/latest.log mid-autosave. Disabling Log4j's own hook leaves vanilla's as the only
-        // one touching logging, restoring the ordering it already assumes. Runs on both the relaunch
-        // below and the real child process, since both re-enter this same method from the top.
         System.setProperty("log4j.shutdownHookEnabled", "false");
+        LauncherUtils.ensureUtf8Console();
 
         if (LunarArcAgent.instrumentation == null) {
             try {
@@ -65,9 +57,6 @@ public class Launcher {
             ConsoleUI.printLogo(minecraftVersion);
 
             checkEula();
-
-            // Started here and collected further down, so the release check runs while the disk
-            // work below is happening instead of in front of it.
             UpdateChecker.Handle updates = UpdateChecker.begin(projectVersion, buildName);
 
             ConsoleUI.printStep("step.initializing");
@@ -102,7 +91,6 @@ public class Launcher {
             if (!Files.exists(configPath)) {
                 saveConfiguration(configPath, config);
             }
-            recordVersion(workingDir, projectVersion);
             SpigotWorldMigration.run(workingDir);
 
             Path selfPath = Paths.get(Launcher.class.getProtectionDomain().getCodeSource().getLocation().toURI())
@@ -230,24 +218,4 @@ public class Launcher {
         }
     }
 
-    static void recordVersion(Path workingDir, String version) {
-        if (version == null || version.isBlank() || "unknown".equalsIgnoreCase(version)) {
-            return;
-        }
-        Path statePath = workingDir.resolve(".lunararc").resolve("version-state.properties");
-        try {
-            Properties state = loadConfiguration(statePath);
-            String current = state.getProperty("version.current", "").trim();
-            if (version.equals(current)) {
-                return;
-            }
-            if (!current.isEmpty() && !"unknown".equalsIgnoreCase(current)) {
-                state.setProperty("version.previous", current);
-            }
-            state.setProperty("version.current", version);
-            Files.createDirectories(statePath.getParent());
-            saveConfiguration(statePath, state);
-        } catch (java.io.IOException ignored) {
-        }
-    }
 }

@@ -275,7 +275,7 @@ public final class PluginClassLoader extends URLClassLoader
                     .getBytes(java.nio.charset.StandardCharsets.UTF_8));
             digest.update(LunarArcServer.platformName().getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
-            digest.update("compat-transform-v29-legacy-nms-translation".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            digest.update("compat-transform-v30-intermediary-arity-guard".getBytes(java.nio.charset.StandardCharsets.UTF_8));
             if (legacyFingerprint != null) {
                 digest.update(legacyFingerprint.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }

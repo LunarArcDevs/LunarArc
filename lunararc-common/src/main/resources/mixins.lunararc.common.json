@@ -105,6 +105,8 @@
     "bukkit.MaterialMixin",
     "api.RegistryAccessMixin",
     "api.ServerBuildInfoMixin",
+    "api.PaperClassLoaderStorageMixin",
+    "api.ClassloaderBytecodeModifierMixin",
     "core.alchemy.PotionBrewingMixin",
     "core.alchemy.BrewingStandBlockEntityMixin",
     "core.recipe.RecipeManagerMixin",

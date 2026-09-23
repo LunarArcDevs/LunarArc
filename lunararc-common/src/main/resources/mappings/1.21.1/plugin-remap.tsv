@@ -31,3 +31,9 @@ METHOD	net/minecraft/server/network/PlayerConnection	sendPacket	*	send
 # same type, pure rename, so the mapping is exact. Seen in this server's log as "No reflective
 # mapping found for field net.minecraft.server.level.ServerPlayer#playerConnection".
 FIELD	net/minecraft/server/level/ServerPlayer	playerConnection	*	connection
+
+# Veinminer hardcodes AbstractHorse.setForceStanding(boolean), a pre-1.17 NMS name for what 1.21.1
+# calls setStanding. Never obfuscated, so neither Mojang's mappings nor Spigot's carry it - only
+# this table can. Seen in this server's log as "No Mojang -> Intermediary mapping found for NMS
+# method net.minecraft.world.entity.animal.horse.AbstractHorse#setForceStanding".
+METHOD	net/minecraft/world/entity/animal/horse/AbstractHorse	setForceStanding	*	setStanding

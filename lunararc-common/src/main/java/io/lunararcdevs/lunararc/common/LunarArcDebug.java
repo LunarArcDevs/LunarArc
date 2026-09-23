@@ -16,38 +16,26 @@ public final class LunarArcDebug {
     private static final Logger LOGGER = LoggerFactory.getLogger("LunarArc/Debug");
     private static final Path OUTPUT = Path.of("logs", "lunararc-debug.log");
     private static final Object LOCK = new Object();
-
-    /** Reflective member lookups routed through LunarArcReflectionBridge: what a plugin asked for, what it was mapped to, and whether it resolved. */
     public static final boolean REFLECT;
-
-    /** Bytecode transformation of plugin classes: which remapping each class was given, and why. */
     public static final boolean REMAP;
-
-    /** Plugin class loading: which loader answered a name, and under which of the requested or mapped spellings. */
     public static final boolean CLASSLOAD;
-
-    /** Entity-side decisions LunarArc overrides, such as letting a player through a portal vanilla would refuse. */
     public static final boolean ENTITY;
-
-    /** The whole life of a fluid step: the block placement that schedules the first tick, the tick itself, and every spread decision with the Bukkit verdict on it. */
     public static final boolean FLUID;
-
-    /** Commands arriving from the console, and what LunarArc did with each one. */
     public static final boolean COMMAND;
-
-    /**
-     * Player interaction pipeline tracing: packet type, hand, item, hit result, event action, event
-     * cancelled state, useItemInHand result, firedInteract state, whether handleUseItem continues,
-     * whether gameMode.useItem() is called, InteractionResult, and player.isUsingItem before/after.
-     */
     public static final boolean INTERACT;
-
-    /**
-     * Startup and shutdown lifecycle timing: per-plugin enable/disable durations, phase-level
-     * totals, and a ranked summary of the slowest items at the end of each lifecycle.
-     */
     public static final boolean TIMING;
     public static final boolean PLUGIN;
+    public static final boolean DISMOUNT;
+    public static final boolean NETWORK;
+
+    private static final java.util.concurrent.atomic.AtomicBoolean HIDDEN_LOOKUP_HINT = new java.util.concurrent.atomic.AtomicBoolean();
+
+    public static void hiddenLookupFailure(Logger logger) {
+        if (HIDDEN_LOOKUP_HINT.compareAndSet(false, true)) {
+            logger.info("Some plugins probe optional or legacy classes and members, so failed reflective lookups are not "
+                    + "logged. Start with -Dlunararc.debug=reflect to see each one.");
+        }
+    }
 
     private static BufferedWriter writer;
     private static boolean unusable;
@@ -67,7 +55,9 @@ public final class LunarArcDebug {
         FLUID = all || channels.contains("fluid");
         COMMAND = all || channels.contains("command");
         PLUGIN = all || channels.contains("plugin");
-        if (INTERACT || TIMING || REFLECT || REMAP || CLASSLOAD || ENTITY || FLUID || COMMAND || PLUGIN) {
+        DISMOUNT = all || channels.contains("dismount");
+        NETWORK = all || channels.contains("network");
+        if (INTERACT || TIMING || REFLECT || REMAP || CLASSLOAD || ENTITY || FLUID || COMMAND || PLUGIN || DISMOUNT || NETWORK) {
             StringBuilder enabled = new StringBuilder();
             if (INTERACT) enabled.append(" interact");
             if (TIMING) enabled.append(" timing");
@@ -78,6 +68,8 @@ public final class LunarArcDebug {
             if (FLUID) enabled.append(" fluid");
             if (COMMAND) enabled.append(" command");
             if (PLUGIN) enabled.append(" plugin");
+            if (DISMOUNT) enabled.append(" dismount");
+            if (NETWORK) enabled.append(" network");
 
             try {
                 open();
@@ -89,9 +81,6 @@ public final class LunarArcDebug {
                     + OUTPUT.toAbsolutePath() + ". Verbose by design; not meant to be left on for a "
                     + "running server.";
             LOGGER.info(announcement);
-            // Also on stdout. This class initializes from the plugin remapper, early enough that
-            // whether the logger is configured yet depends on the loader, and an announcement that
-            // may or may not appear is no use for telling someone their flag did not take.
             System.out.println(announcement);
         }
     }
@@ -137,7 +126,19 @@ public final class LunarArcDebug {
         if (FLUID) enabled.append("fluid ");
         if (COMMAND) enabled.append("command ");
         if (PLUGIN) enabled.append("plugin ");
+        if (DISMOUNT) enabled.append("dismount ");
+        if (NETWORK) enabled.append("network ");
         return enabled.isEmpty() ? "none" : enabled.toString().trim().replace(' ', ',');
+    }
+
+    /** Log on the dismount channel. Call behind {@code if (LunarArcDebug.DISMOUNT)}. */
+    public static void dismount(String format, Object... args) {
+        write("dismount", format, args);
+    }
+
+    /** Log on the network channel. Call behind {@code if (LunarArcDebug.NETWORK)}. */
+    public static void network(String format, Object... args) {
+        write("network", format, args);
     }
 
     /** Log on the command channel. Call behind {@code if (LunarArcDebug.COMMAND)}. */
@@ -165,6 +166,8 @@ public final class LunarArcDebug {
             case "entity" -> ENTITY;
             case "fluid" -> FLUID;
             case "command" -> COMMAND;
+            case "dismount" -> DISMOUNT;
+            case "network" -> NETWORK;
             default -> false;
         };
         if (!enabled) return;
@@ -203,7 +206,9 @@ public final class LunarArcDebug {
                     + (CLASSLOAD ? " classload" : "")
                     + (ENTITY ? " entity" : "")
                     + (FLUID ? " fluid" : "")
-                    + (COMMAND ? " command" : "") + "\n");
+                    + (COMMAND ? " command" : "")
+                    + (DISMOUNT ? " dismount" : "")
+                    + (NETWORK ? " network" : "") + "\n");
             writer.write("This file is passive tracing only; it does not change plugin behaviour.\n\n");
             writer.flush();
             Runtime.getRuntime().addShutdownHook(new Thread(LunarArcDebug::close, "LunarArc-debug-close"));

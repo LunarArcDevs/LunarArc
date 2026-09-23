@@ -24,6 +24,11 @@ public class ForgeLauncher {
             return;
         }
 
+        // LunarArc's shared mixin refmap only carries a Fabric-intermediary mapping table, which
+        // does not resolve against Forge's Mojang-named runtime; every mixin's own selector is
+        // already a real Mojang name, so skipping the refmap outright is correct here.
+        System.setProperty("mixin.env.disableRefMap", "true");
+
         LoaderSameJvmLaunch.launchFromArgsFile(workingDir, selfPath, argsFile, "Forge");
     }
 

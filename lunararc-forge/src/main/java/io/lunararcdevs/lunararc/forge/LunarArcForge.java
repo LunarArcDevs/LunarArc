@@ -22,7 +22,8 @@ public final class LunarArcForge {
         LunarArcClientSideGuard.requireDedicatedServer(FMLEnvironment.dist == Dist.CLIENT);
         LunarArcServer.installPlatform("Forge", LunarArcForge.class.getClassLoader());
         io.lunararcdevs.lunararc.common.config.IncompatibleList.screenLoadedMods(
-                lunararc$loadedMods());
+                io.lunararcdevs.lunararc.common.mod.LunarArcModListReflection.loadedMods(
+                        net.minecraftforge.fml.ModList.get().getMods()));
         ForgeCommandHook.install();
         ForgeServerLifecycle.register(MinecraftForge.EVENT_BUS);
         ForgeChannelRegistration.register(MinecraftForge.EVENT_BUS);
@@ -30,27 +31,5 @@ public final class LunarArcForge {
         ForgeBlockPlaceEvents.register(MinecraftForge.EVENT_BUS);
         ForgeEntityTeleportEvents.register(MinecraftForge.EVENT_BUS);
         ForgeEntityJoinEvents.register(MinecraftForge.EVENT_BUS);
-    }
-
-    private static java.util.Map<String, String> lunararc$loadedMods() {
-        java.util.Map<String, String> mods = new java.util.HashMap<>();
-        java.lang.reflect.Method getVersion;
-        try {
-            getVersion = net.minecraftforge.forgespi.language.IModInfo.class.getMethod("getVersion");
-        } catch (ReflectiveOperationException | RuntimeException unavailable) {
-            getVersion = null;
-        }
-        for (net.minecraftforge.forgespi.language.IModInfo mod : net.minecraftforge.fml.ModList.get().getMods()) {
-            String version = null;
-            if (getVersion != null) {
-                try {
-                    Object value = getVersion.invoke(mod);
-                    if (value != null) version = value.toString();
-                } catch (ReflectiveOperationException | RuntimeException ignored) {
-                }
-            }
-            mods.put(mod.getModId(), version);
-        }
-        return mods;
     }
 }

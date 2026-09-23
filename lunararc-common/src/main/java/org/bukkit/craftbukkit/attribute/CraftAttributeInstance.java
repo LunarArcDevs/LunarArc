@@ -123,8 +123,8 @@ public class CraftAttributeInstance implements org.bukkit.attribute.AttributeIns
     private void removeModifier(String key) {
         try {
             Object resourceLocation = resourceLocation(key);
-            Method remove = findMethod(handle.getClass(), "removeModifier", resourceLocation.getClass());
-            if (remove == null) throw new IllegalStateException("Paper 1.21.1 AttributeInstance#removeModifier(ResourceLocation) was not found");
+            Method remove = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge
+                    .getMethod(handle.getClass(), "removeModifier", new Class<?>[]{resourceLocation.getClass()});
             remove.invoke(handle, resourceLocation);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("Unable to remove Minecraft attribute modifier " + key, e);
@@ -133,20 +133,12 @@ public class CraftAttributeInstance implements org.bukkit.attribute.AttributeIns
 
     private void invokeModifierMutation(String name, Object modifier) {
         try {
-            Method method = findMethod(handle.getClass(), name, modifier.getClass());
-            if (method == null) throw new IllegalStateException("Paper 1.21.1 AttributeInstance#" + name + " was not found");
+            Method method = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge
+                    .getMethod(handle.getClass(), name, new Class<?>[]{modifier.getClass()});
             method.invoke(handle, modifier);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("Unable to mutate Minecraft attribute modifiers", e);
         }
-    }
-
-    private static @Nullable Method findMethod(Class<?> owner, String name, Class<?> argument) {
-        for (Method method : owner.getMethods()) {
-            if (!method.getName().equals(name) || method.getParameterCount() != 1) continue;
-            if (method.getParameterTypes()[0].isAssignableFrom(argument)) return method;
-        }
-        return null;
     }
 
     public static Object toMinecraft(AttributeModifier modifier) {
@@ -191,12 +183,17 @@ public class CraftAttributeInstance implements org.bukkit.attribute.AttributeIns
     }
 
     private static Object resourceLocation(String key) throws ReflectiveOperationException {
+        // "parse"/"tryParse" are Mojang names - on Fabric/Quilt this class is loaded under its
+        // Intermediary name, so a raw Class.getMethod(literal name) never finds them there. Route
+        // through the reflection bridge, which maps the name for whichever runtime this is.
         Class<?> resourceLocation = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.resources.ResourceLocation");
         try {
-            return resourceLocation.getMethod("parse", String.class).invoke(null, key);
+            return io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge
+                    .getMethod(resourceLocation, "parse", new Class<?>[]{String.class}).invoke(null, key);
         } catch (NoSuchMethodException ignored) {
             try {
-                return resourceLocation.getMethod("tryParse", String.class).invoke(null, key);
+                return io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge
+                        .getMethod(resourceLocation, "tryParse", new Class<?>[]{String.class}).invoke(null, key);
             } catch (NoSuchMethodException ignoredAgain) {
                 Constructor<?> constructor = resourceLocation.getDeclaredConstructor(String.class);
                 constructor.setAccessible(true);

@@ -26,6 +26,16 @@ public class LauncherUtils {
         }
         return "java";
     }
+    public static void ensureUtf8Console() {
+        if (!System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win")) return;
+        try {
+            new ProcessBuilder("cmd.exe", "/c", "chcp", "65001")
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start().waitFor();
+        } catch (Exception ignored) {
+        }
+    }
 
     public static java.util.List<String> inheritedJvmArguments(String... ownProperties) {
         java.util.Set<String> owned = new java.util.HashSet<>(java.util.Arrays.asList(ownProperties));
@@ -69,6 +79,9 @@ public class LauncherUtils {
 
     public static java.util.List<String> serverJvmArguments(String... ownProperties) {
         java.util.List<String> arguments = new java.util.ArrayList<>(inheritedJvmArguments(ownProperties));
+        addDefaultEncoding(arguments);
+        addDefaultStatusLoggerLevel(arguments);
+
         for (String argument : arguments) {
             if (argument.startsWith("-Xmx") || argument.startsWith("-XX:MaxHeapSize")
                     || argument.startsWith("-XX:MaxRAMPercentage") || argument.startsWith("-XX:MaxRAMFraction")) {
@@ -90,6 +103,21 @@ public class LauncherUtils {
                 + " \"java.lang.OutOfMemoryError: Java heap space\"; to choose your own, start LunarArc"
                 + " as java -Xmx6G -jar <jar>.");
         return arguments;
+    }
+
+    private static void addDefaultEncoding(java.util.List<String> arguments) {
+        for (String argument : arguments) {
+            if (argument.startsWith("-Dstdout.encoding=") || argument.startsWith("-Dfile.encoding=")) return;
+        }
+        arguments.add("-Dstdout.encoding=UTF-8");
+        arguments.add("-Dstderr.encoding=UTF-8");
+    }
+
+    private static void addDefaultStatusLoggerLevel(java.util.List<String> arguments) {
+        for (String argument : arguments) {
+            if (argument.startsWith("-Dlog4j2.StatusLogger.level=")) return;
+        }
+        arguments.add("-Dlog4j2.StatusLogger.level=ERROR");
     }
 
     static String defaultMaxHeapArgument() {
@@ -118,12 +146,10 @@ public class LauncherUtils {
                             return number.longValue();
                         }
                     } catch (ReflectiveOperationException | RuntimeException unavailable) {
-                        // getTotalMemorySize is Java 14 and newer; the other is its predecessor.
                     }
                 }
             }
         } catch (Throwable unavailable) {
-            // No management bean at all, or a runtime without com.sun.management.
         }
 
         long own = Runtime.getRuntime().maxMemory();
@@ -186,12 +212,6 @@ public class LauncherUtils {
         return null;
     }
 
-    /**
-     * The first entry in {@code launchJar}'s manifest Class-Path that's missing on disk, or null if
-     * the jar and every entry it references are present - the Fabric/Quilt equivalent of
-     * {@link #missingLaunchJar}, since those loaders' launch jars carry their dependency list in the
-     * manifest rather than an args file.
-     */
     static String missingManifestClassPathJar(Path launchJar) {
         if (!Files.isRegularFile(launchJar)) return launchJar.toString();
         java.util.jar.Manifest manifest;

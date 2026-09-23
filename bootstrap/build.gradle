@@ -12,6 +12,10 @@ configurations {
         canBeResolved = true
         canBeConsumed = false
     }
+    mixinextrasJar {
+        canBeResolved = true
+        canBeConsumed = false
+    }
 }
 
 dependencies {
@@ -24,6 +28,8 @@ dependencies {
     implementation libs.paper.api
     paperApiJar(libs.paper.api) { transitive = false }
     implementation libs.bungeecord.chat.api
+
+    mixinextrasJar(libs.mixinextras.common) { transitive = false }
 
     implementation libs.sqlite.jdbc
     implementation libs.mysql.connector.j
@@ -115,6 +121,9 @@ def createFatJar(String platform) {
     ]
     def platformProject = project(platformProjectMap[platform])
 
+    String forgeLocatorPackage = 'io/lunararcdevs/lunararc/forge/mod/**'
+    String forgeLocatorServiceFile = 'META-INF/services/net.minecraftforge.forgespi.locating.IModLocator'
+
     def resolvePlatformJarTask = {
         def t = platformProject.tasks.findByName('remapJar')
         if (t == null || !t.enabled) t = platformProject.tasks.findByName('jar')
@@ -139,6 +148,15 @@ def createFatJar(String platform) {
         archiveVersion.set(project.version.toString())
         manifest {
             attributes('Implementation-Version': project.version)
+            if (platform == 'forge') {
+                // Mixin's default platform agent reads this manifest attribute directly off the
+                // jar our IModLocator hands it (mods.toml's [[mixins]] is not what applies these
+                // on this Forge version) - without it every mixin in both configs silently never applies.
+                attributes('MixinConfigs': 'mixins.lunararc.common.json,mixins.lunararc.forge.json')
+                // Same mechanism, for bootstrapping MixinExtras (Forge doesn't bundle it, unlike
+                // NeoForge/Fabric/Quilt) - see LunarArcMixinExtrasConnector_Forge.
+                attributes('MixinConnector': 'io.lunararcdevs.lunararc.forge.mixin.LunarArcMixinExtrasConnector_Forge')
+            }
         }
         destinationDirectory.set(layout.buildDirectory.dir('common-jars'))
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -168,8 +186,8 @@ def createFatJar(String platform) {
             }
         } else if (platform == 'forge') {
             from(zipTree(platformJarTask.outputs.files.singleFile)) {
-                exclude 'io/lunararcdevs/lunararc/forge/mod/**'
-                exclude 'META-INF/services/net.minecraftforge.forgespi.locating.IModLocator'
+                exclude forgeLocatorPackage
+                exclude forgeLocatorServiceFile
                 exclude 'META-INF/MANIFEST.MF'
                 exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
             }
@@ -189,12 +207,93 @@ def createFatJar(String platform) {
             if (platform == 'neoforge') {
                 exclude 'META-INF/services/net.neoforged.neoforgespi.locating.IModFileCandidateLocator'
             } else if (platform == 'forge') {
-                exclude 'META-INF/services/net.minecraftforge.forgespi.locating.IModLocator'
+                exclude forgeLocatorServiceFile
             }
         }
 
         from(zipTree(project.configurations.paperApiJar.singleFile)) {
             exclude 'META-INF/**'
+        }
+    }
+
+    if (platform == 'forge') {
+        tasks.register('forgeLocatorJar', Jar) {
+            def platformJarTask = resolvePlatformJarTask()
+            dependsOn platformJarTask
+            archiveBaseName.set("${rootProject.name.toLowerCase(Locale.ROOT).replaceAll('[^a-z0-9._-]+', '-')}-forge-locator")
+            archiveVersion.set(project.version.toString())
+            destinationDirectory.set(layout.buildDirectory.dir('common-jars'))
+            duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+            from(zipTree(platformJarTask.outputs.files.singleFile)) {
+                include forgeLocatorPackage
+                include forgeLocatorServiceFile
+            }
+        }
+
+        // Bundling MixinExtras' classes under their real package name - whether as their own jar
+        // or merged straight into common.jar - always risks a module-resolution crash the moment
+        // another installed mod brings its own copy: same package name under two differently-named
+        // modules is a split-package ResolutionException, and matching the module name instead
+        // ("Automatic-Module-Name: MixinExtras") was tried and still crashed real servers, because
+        // a mod bundling MixinExtras via Forge's own jar-in-jar mechanism gets resolved through a
+        // different ModuleFinder than the one scanning our classpath entries, so the two same-named
+        // modules never get deduped the way guava/asm do and JPMS refuses to let one module read two
+        // different module references sharing one name. Relocating our copy's package below sidesteps
+        // this entirely: it can no longer collide by name or by package with anyone else's copy, no
+        // matter how they deliver theirs.
+        tasks.named('forgeCommonJar').configure {
+            dependsOn project.configurations.mixinextrasJar
+            doLast {
+                String fromPrefix = 'com/llamalad7/mixinextras/'
+                String toPrefix = 'io/lunararcdevs/lunararc/libs/mixinextras/'
+                def remapper = new org.objectweb.asm.commons.Remapper() {
+                    @Override
+                    String map(String name) {
+                        return name.startsWith(fromPrefix) ? toPrefix + name.substring(fromPrefix.length()) : name
+                    }
+                }
+                def remapClass = { byte[] bytes ->
+                    def writer = new org.objectweb.asm.ClassWriter(0)
+                    new org.objectweb.asm.ClassReader(bytes).accept(new org.objectweb.asm.commons.ClassRemapper(writer, remapper), 0)
+                    return writer.toByteArray()
+                }
+
+                File output = archiveFile.get().asFile
+                File repaired = new File(temporaryDir, 'mixinextras-relocated-common.jar')
+                Set<String> written = new HashSet<>()
+                new java.util.jar.JarOutputStream(new FileOutputStream(repaired)).withCloseable { target ->
+                    new java.util.jar.JarFile(output).withCloseable { input ->
+                        input.entries().each { entry ->
+                            if (entry.directory || !written.add(entry.name)) return
+                            byte[] bytes = input.getInputStream(entry).withCloseable { it.readAllBytes() }
+                            if (entry.name.endsWith('.class')) bytes = remapClass(bytes)
+                            def copy = new java.util.jar.JarEntry(entry.name)
+                            copy.time = entry.time
+                            target.putNextEntry(copy)
+                            target.write(bytes)
+                            target.closeEntry()
+                        }
+                    }
+                    new java.util.zip.ZipFile(project.configurations.mixinextrasJar.singleFile).withCloseable { mixinextrasZip ->
+                        mixinextrasZip.entries().each { entry ->
+                            if (entry.directory || entry.name.startsWith('META-INF/')) return
+                            byte[] bytes = mixinextrasZip.getInputStream(entry).withCloseable { it.readAllBytes() }
+                            String name = entry.name
+                            if (name.endsWith('.class')) {
+                                bytes = remapClass(bytes)
+                                name = remapper.map(name.substring(0, name.length() - '.class'.length())) + '.class'
+                            }
+                            if (!written.add(name)) return
+                            def copy = new java.util.jar.JarEntry(name)
+                            target.putNextEntry(copy)
+                            target.write(bytes)
+                            target.closeEntry()
+                        }
+                    }
+                }
+                java.nio.file.Files.move(repaired.toPath(), output.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            }
         }
     }
 
@@ -248,6 +347,9 @@ def createFatJar(String platform) {
         relocate('org.apache.maven', 'io.lunararcdevs.lunararc.libs.maven.core') {
             exclude 'org/apache/maven/artifact/versioning/**'
         }
+        if (platform == 'forge') {
+            exclude 'org/apache/maven/artifact/versioning/**'
+        }
         relocate 'org.codehaus.plexus',      'io.lunararcdevs.lunararc.libs.maven.plexus'
         relocate 'org.eclipse.sisu',         'io.lunararcdevs.lunararc.libs.maven.sisu'
         relocate 'javax.inject',             'io.lunararcdevs.lunararc.libs.maven.inject'
@@ -267,6 +369,13 @@ def createFatJar(String platform) {
 
         from(tasks.named("${platform}CommonJar").flatMap { it.archiveFile }) {
             rename { 'common.jar' }
+        }
+
+        if (platform == 'forge') {
+            dependsOn tasks.named('forgeLocatorJar')
+            from(tasks.named('forgeLocatorJar').flatMap { it.archiveFile }) {
+                rename { 'forge-locator.jar' }
+            }
         }
 
         List<String> relocatedSourcePrefixes = [
@@ -341,7 +450,10 @@ def createFatJar(String platform) {
             def providedByPlatform = id.group.startsWith('org.apache.commons') ||
                 (id.group.startsWith('org.apache.maven') && !(id.group == 'org.apache.maven.resolver' || id.group == 'org.apache.maven')) ||
                 id.group.startsWith('org.apache.logging') ||
-                id.group.startsWith('org.slf4j') ||
+                // Forge's own launch args file never puts slf4j-api on the classpath, unlike
+                // NeoForge/Fabric/Quilt - the jar reaching libraries/ there is a transitive
+                // download only, so Forge needs its own copy shaded in.
+                (id.group.startsWith('org.slf4j') && platform != 'forge') ||
                 id.group.startsWith('com.google.guava') ||
                 id.group.startsWith('com.google.code.findbugs') ||
                 id.group.startsWith('com.google.errorprone') ||
@@ -389,7 +501,8 @@ def createFatJar(String platform) {
                 (id.group == 'org.xerial' && id.name == 'sqlite-jdbc') ||
                 (id.group == 'com.mysql' && id.name == 'mysql-connector-j') ||
                 id.group == 'org.spongepowered' ||
-                id.group == 'io.leangen.geantyref'
+                id.group == 'io.leangen.geantyref' ||
+                id.group == 'org.slf4j'
 
             if (flatten) {
                 from(zipTree(artifact.file)) {

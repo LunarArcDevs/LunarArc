@@ -52,10 +52,14 @@ public final class LunarArcEssentialsItemBridge {
         }
     }
 
+    private static Object getItemDb(Plugin essentials) throws ReflectiveOperationException {
+        return essentials.getClass().getMethod("getItemDb").invoke(essentials);
+    }
+
     private static void prepareItemCommands(Plugin essentials) {
         if (!essentials.isEnabled()) return;
         try {
-            Object itemDb = essentials.getClass().getMethod("getItemDb").invoke(essentials);
+            Object itemDb = getItemDb(essentials);
             itemDb.getClass().getMethod("get", String.class, boolean.class).invoke(itemDb, "stone", false);
             itemDb.getClass().getMethod("listNames").invoke(itemDb);
             ClassLoader loader = essentials.getClass().getClassLoader();
@@ -204,7 +208,7 @@ public final class LunarArcEssentialsItemBridge {
 
     private static void reloadEssentialsItemDb(Plugin essentials) {
         try {
-            Object itemDb = essentials.getClass().getMethod("getItemDb").invoke(essentials);
+            Object itemDb = getItemDb(essentials);
             itemDb.getClass().getMethod("reloadConfig").invoke(itemDb);
         } catch (ReflectiveOperationException e) {
             LOGGER.debug("[LunarArc] Could not refresh Essentials' item database in place;"

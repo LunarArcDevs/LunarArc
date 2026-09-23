@@ -22,10 +22,21 @@ public abstract class PermissionAPIMixin {
         if (node.getType() != PermissionTypes.BOOLEAN) {
             return;
         }
-        LunarArcBukkitPermissions.explicitOnlinePermission(player.getUUID(), node.getNodeName()).ifPresent(value -> {
+        LunarArcBukkitPermissions.explicitOnlinePermission(playerUuid(player), node.getNodeName()).ifPresent(value -> {
             @SuppressWarnings("unchecked")
             T resolved = (T) value;
             cir.setReturnValue(resolved);
         });
+    }
+
+    // Loom compiles Forge against SRG names; Entity#getUUID is a real Mojang name that never
+    // resolves directly here, so go through the reflection bridge instead.
+    private static java.util.UUID playerUuid(ServerPlayer player) {
+        try {
+            return (java.util.UUID) io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge
+                    .getMethod(player.getClass(), "getUUID", new Class<?>[0]).invoke(player);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Unable to resolve the player's UUID", e);
+        }
     }
 }

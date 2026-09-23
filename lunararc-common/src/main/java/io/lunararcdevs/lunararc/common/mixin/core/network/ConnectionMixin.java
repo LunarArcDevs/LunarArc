@@ -35,6 +35,15 @@ public abstract class ConnectionMixin implements ConnectionBridge {
         this.lunararc$rawAddress = this.channel.remoteAddress();
     }
 
+    @Inject(method = "exceptionCaught", at = @At("HEAD"))
+    private void lunararc$logExceptionCaught(ChannelHandlerContext ctx, Throwable exception, CallbackInfo ci) {
+        if (!io.lunararcdevs.lunararc.common.LunarArcDebug.NETWORK) return;
+        java.io.StringWriter trace = new java.io.StringWriter();
+        exception.printStackTrace(new java.io.PrintWriter(trace));
+        io.lunararcdevs.lunararc.common.LunarArcDebug.network(
+                "Connection.exceptionCaught remoteAddress={} exception={}", this.lunararc$rawAddress, trace);
+    }
+
     @Override
     public String lunararc$getHostname() {
         return this.lunararc$hostname;

@@ -38,14 +38,22 @@ public final class LunarArcReflectionBridge {
                 try {
                     return Class.forName(name, true, callerLoader);
                 } catch (ClassNotFoundException second) {
-                    LOGGER.warn("Class.forName failed for both mapped name '{}' and original name '{}' "
-                                    + "using classloader {} (caller {})", mapped, name, callerLoader,
-                            io.lunararcdevs.lunararc.common.LunarArcDebug.caller());
+                    if (io.lunararcdevs.lunararc.common.LunarArcDebug.REFLECT) {
+                        LOGGER.warn("Class.forName failed for both mapped name '{}' and original name '{}' "
+                                        + "using classloader {} (caller {})", mapped, name, callerLoader,
+                                io.lunararcdevs.lunararc.common.LunarArcDebug.caller());
+                    } else {
+                        io.lunararcdevs.lunararc.common.LunarArcDebug.hiddenLookupFailure(LOGGER);
+                    }
                     throw second;
                 }
             }
-            LOGGER.warn("Class.forName failed for '{}' (unmapped == input) using classloader {} (caller {})",
-                    name, callerLoader, io.lunararcdevs.lunararc.common.LunarArcDebug.caller());
+            if (io.lunararcdevs.lunararc.common.LunarArcDebug.REFLECT) {
+                LOGGER.warn("Class.forName failed for '{}' (unmapped == input) using classloader {} (caller {})",
+                        name, callerLoader, io.lunararcdevs.lunararc.common.LunarArcDebug.caller());
+            } else {
+                io.lunararcdevs.lunararc.common.LunarArcDebug.hiddenLookupFailure(LOGGER);
+            }
             throw first;
         }
     }

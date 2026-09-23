@@ -15,6 +15,7 @@ public class CraftConsoleCommandSender extends org.bukkit.craftbukkit.command.Se
     private static final org.apache.logging.log4j.Logger LOGGER = org.apache.logging.log4j.LogManager.getLogger("Console");
     private static final String ANSI_RESET = "\u001B[0m";
     private static final boolean ANSI_ENABLED = detectAnsi();
+    private static final boolean PLATFORM_CONVERTS_LEGACY_CODES = platformConvertsLegacyCodes();
     private static final Object CONSOLE_LOCK = new Object();
     private final org.bukkit.craftbukkit.conversations.ConversationTracker conversationTracker = new org.bukkit.craftbukkit.conversations.ConversationTracker();
 
@@ -54,16 +55,9 @@ public class CraftConsoleCommandSender extends org.bukkit.craftbukkit.command.Se
             return;
         }
 
-        // NeoForge's own log4j2.xml already renders standard section-sign legacy color codes
-        // correctly per-appender: %minecraftFormatting converts them to ANSI for the live
-        // TerminalConsole appender and strips them entirely (via its {strip} option) for the
-        // File/DebugFile appenders. Baking raw ANSI into the message ourselves - as this used
-        // to do for every code, not just hex ones - defeats that: {strip} only recognizes real
-        // section-sign codes, so pre-baked ANSI bytes pass straight through into logs/latest.log
-        // unrendered. Hex colors ("&x...", "&#RRGGBB") are the one thing that converter cannot
-        // render at all, so those still need converting to ANSI here; everything else is left
-        // as real section-sign codes for log4j's own converter to handle appropriately.
-        String rendered = ANSI_ENABLED ? translateHexOnly(text) : stripLegacy(text);
+        String rendered = ANSI_ENABLED
+                ? translateLegacy(text, PLATFORM_CONVERTS_LEGACY_CODES)
+                : stripLegacy(text);
 
 
         synchronized (CONSOLE_LOCK) {
@@ -88,7 +82,7 @@ public class CraftConsoleCommandSender extends org.bukkit.craftbukkit.command.Se
         return true;
     }
 
-    private static String translateHexOnly(String text) {
+    private static String translateLegacy(String text, boolean hexOnly) {
         StringBuilder out = new StringBuilder(text.length() + 32);
         boolean bakedAnsi = false;
         for (int i = 0; i < text.length(); i++) {
@@ -126,13 +120,17 @@ public class CraftConsoleCommandSender extends org.bukkit.craftbukkit.command.Se
                     }
                 }
 
-                // Standard single-character codes are left as real section-sign codes -
-                // NeoForge's log4j2.xml already renders or strips these correctly per-appender
-                // via %minecraftFormatting, and pre-baking ANSI here would defeat that (see
-                // writeConsole). '&' shorthand is normalized to the real marker so that
-                // conversion still recognizes it.
-                if (ansiFor(code) != null) {
-                    out.append('§').append(code);
+                String ansi = ansiFor(code);
+                if (ansi != null) {
+                    if (hexOnly) {
+                        // Left as a real section-sign code - the platform's own log4j2.xml
+                        // renders or strips these correctly per-appender via %minecraftFormatting,
+                        // and pre-baking ANSI here would defeat that (see writeConsole).
+                        out.append('§').append(code);
+                    } else {
+                        out.append(ansi);
+                        if (!ansi.isEmpty()) bakedAnsi = true;
+                    }
                     i++;
                     continue;
                 }
@@ -143,6 +141,11 @@ public class CraftConsoleCommandSender extends org.bukkit.craftbukkit.command.Se
             out.append(ANSI_RESET);
         }
         return out.toString();
+    }
+
+    private static boolean platformConvertsLegacyCodes() {
+        String platform = io.lunararcdevs.lunararc.common.mod.server.LunarArcServer.platformName();
+        return "Forge".equalsIgnoreCase(platform) || "NeoForge".equalsIgnoreCase(platform);
     }
 
     private static String stripLegacy(String text) {

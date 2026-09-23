@@ -22,34 +22,13 @@ public final class LunarArcNeoForge {
         LunarArcClientSideGuard.requireDedicatedServer(FMLEnvironment.dist == Dist.CLIENT);
         LunarArcServer.installPlatform("NeoForge", LunarArcNeoForge.class.getClassLoader());
         io.lunararcdevs.lunararc.common.config.IncompatibleList.screenLoadedMods(
-                lunararc$loadedMods());
+                io.lunararcdevs.lunararc.common.mod.LunarArcModListReflection.loadedMods(
+                        net.neoforged.fml.ModList.get().getMods()));
         NeoForgeCommandHook.install();
         NeoForgeServerLifecycle.register();
         NeoForgeBlockBreakEvents.register();
         NeoForgeBlockPlaceEvents.register();
         NeoForgeEntityTeleportEvents.register();
         NeoForgeEntityJoinEvents.register();
-    }
-
-    private static java.util.Map<String, String> lunararc$loadedMods() {
-        java.util.Map<String, String> mods = new java.util.HashMap<>();
-        java.lang.reflect.Method getVersion;
-        try {
-            getVersion = net.neoforged.neoforgespi.language.IModInfo.class.getMethod("getVersion");
-        } catch (ReflectiveOperationException | RuntimeException unavailable) {
-            getVersion = null;
-        }
-        for (net.neoforged.neoforgespi.language.IModInfo mod : net.neoforged.fml.ModList.get().getMods()) {
-            String version = null;
-            if (getVersion != null) {
-                try {
-                    Object value = getVersion.invoke(mod);
-                    if (value != null) version = value.toString();
-                } catch (ReflectiveOperationException | RuntimeException ignored) {
-                }
-            }
-            mods.put(mod.getModId(), version);
-        }
-        return mods;
     }
 }

@@ -11,6 +11,26 @@ import org.bukkit.craftbukkit.util.CraftChatMessage;
 public final class LunarArcComponentPipeline {
     private LunarArcComponentPipeline() {}
 
+    private static volatile Class<?> paperAdventureBridge;
+    private static volatile boolean paperAdventureBridgeMissing;
+
+    /** The io.papermc.paper.adventure.PaperAdventure bridge class, resolved once and cached -
+     *  {@link #toAdventure} and {@link #fromAdventure} both need it and neither can assume it exists. */
+    private static Class<?> paperAdventureBridge() throws ClassNotFoundException {
+        if (paperAdventureBridgeMissing) throw new ClassNotFoundException("io.papermc.paper.adventure.PaperAdventure");
+        Class<?> bridge = paperAdventureBridge;
+        if (bridge != null) return bridge;
+        try {
+            bridge = Class.forName("io.papermc.paper.adventure.PaperAdventure", false,
+                    LunarArcComponentPipeline.class.getClassLoader());
+            paperAdventureBridge = bridge;
+            return bridge;
+        } catch (ClassNotFoundException notFound) {
+            paperAdventureBridgeMissing = true;
+            throw notFound;
+        }
+    }
+
     public static net.minecraft.network.chat.Component fromLegacy(String message) {
         if (message == null || message.isEmpty()) {
             return net.minecraft.network.chat.Component.empty();
@@ -106,8 +126,7 @@ public final class LunarArcComponentPipeline {
     public static Component toAdventure(net.minecraft.network.chat.Component component) {
         if (component == null) return Component.empty();
         try {
-            Class<?> bridge = Class.forName("io.papermc.paper.adventure.PaperAdventure", false,
-                    LunarArcComponentPipeline.class.getClassLoader());
+            Class<?> bridge = paperAdventureBridge();
             java.lang.reflect.Method method = bridge.getMethod("asAdventure", net.minecraft.network.chat.Component.class);
             Object converted = method.invoke(null, component);
             if (converted instanceof Component adventure) return adventure;
@@ -132,8 +151,7 @@ public final class LunarArcComponentPipeline {
 
 
         try {
-            Class<?> bridge = Class.forName("io.papermc.paper.adventure.PaperAdventure", false,
-                    LunarArcComponentPipeline.class.getClassLoader());
+            Class<?> bridge = paperAdventureBridge();
             java.lang.reflect.Method method = bridge.getMethod("asVanilla", Component.class);
             Object converted = method.invoke(null, component);
             if (converted instanceof net.minecraft.network.chat.Component nms) return nms;

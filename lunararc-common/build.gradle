@@ -39,6 +39,46 @@ static byte[] neutralizeMojangLogUtils(byte[] classBytes) {
     return writer.toByteArray()
 }
 
+static byte[] redirectPaperOnlyNmsCalls(byte[] classBytes) {
+    String support = 'io/lunararcdevs/lunararc/common/bridge/donor/DonorContainerSupport'
+    Map<String, String> renamedTypes = [
+        'net/minecraft/world/level/block/ChestBlock$DoubleInventory': 'io/lunararcdevs/lunararc/common/bridge/donor/DonorDoubleInventory'
+    ]
+    ClassNode classNode = new ClassNode()
+    new ClassReader(classBytes).accept(classNode, 0)
+    boolean changed = false
+    for (MethodNode method : classNode.methods) {
+        for (AbstractInsnNode insn : method.instructions.toArray()) {
+            if (!(insn instanceof MethodInsnNode)) continue
+            MethodInsnNode call = (MethodInsnNode) insn
+            if (call.owner == 'net/minecraft/world/Container' && call.name == 'getOwner' &&
+                    call.desc == '()Lorg/bukkit/inventory/InventoryHolder;') {
+                call.setOpcode(org.objectweb.asm.Opcodes.INVOKESTATIC)
+                call.owner = support
+                call.name = 'ownerOf'
+                call.desc = '(Lnet/minecraft/world/Container;)Lorg/bukkit/inventory/InventoryHolder;'
+                call.itf = false
+                changed = true
+            } else if (call.owner == 'net/minecraft/world/level/block/ChestBlock' && call.name == 'getMenuProvider' &&
+                    call.desc == '(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Z)Lnet/minecraft/world/MenuProvider;') {
+                call.setOpcode(org.objectweb.asm.Opcodes.INVOKESTATIC)
+                call.owner = support
+                call.name = 'chestMenuProvider'
+                call.desc = '(Lnet/minecraft/world/level/block/ChestBlock;Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;Z)Lnet/minecraft/world/MenuProvider;'
+                call.itf = false
+                changed = true
+            }
+        }
+    }
+    boolean referencesRenamed = renamedTypes.keySet().any {
+        new String(classBytes, java.nio.charset.StandardCharsets.ISO_8859_1).contains(it)
+    }
+    if (!changed && !referencesRenamed) return classBytes
+    ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS)
+    classNode.accept(new org.objectweb.asm.commons.ClassRemapper(writer, new org.objectweb.asm.commons.SimpleRemapper(renamedTypes)))
+    return writer.toByteArray()
+}
+
 if (project == rootProject) {
     throw new GradleException('lunararc-common must be built from the LunarArc root project. Run ./gradlew clean build collect from the directory containing settings.gradle.')
 }
@@ -827,6 +867,7 @@ tasks.register('preparePaperImplementationSurface') {
 
                 byte[] classBytes = jar.getInputStream(entry).withCloseable { it.readAllBytes() }
                 classBytes = neutralizeMojangLogUtils(classBytes)
+                classBytes = redirectPaperOnlyNmsCalls(classBytes)
 
                 Set<String> found = referencesOf(classBytes)
                 if (!found.isEmpty()) paperRefsByDonor.put(entry.name, found)
@@ -1050,9 +1091,6 @@ tasks.register('runCompatibilityRegression', JavaExec) {
     mainClass = 'io.lunararcdevs.lunararc.PluginCompatibilityRegressionTest'
     javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(21) }
     systemProperty 'log4j2.loggerContextFactory', 'org.apache.logging.log4j.simple.SimpleLoggerContextFactory'
-    // Configurate's ObjectFieldDiscoverer reflects into Enum.name to serialize enum-keyed maps
-    // (LegacyPaperMeta's dependency migration does this) - a real server JVM already opens this
-    // broadly, this bare JavaExec doesn't.
     jvmArgs '--add-opens', 'java.base/java.lang=ALL-UNNAMED'
 }
 

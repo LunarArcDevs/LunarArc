@@ -155,10 +155,17 @@ public final class LunarArcRuntime {
     }
 
     private static void extractModFile(Path selfJar, Path target) throws IOException {
+        extractNestedJarEntry(selfJar, "common.jar", target);
+    }
+
+    /** Extracts one nested jar-within-a-jar entry from {@code selfJar} to a real file on disk,
+     *  atomically, so callers never see a partially-written target. Shared by common.jar (every
+     *  loader) and any loader-specific nested jar (e.g. Forge's locator-only jar) alike. */
+    static void extractNestedJarEntry(Path selfJar, String entryName, Path target) throws IOException {
         try (JarFile jar = new JarFile(selfJar.toFile())) {
-            JarEntry entry = jar.getJarEntry("common.jar");
+            JarEntry entry = jar.getJarEntry(entryName);
             if (entry == null) {
-                throw new IOException("common.jar entry missing from " + selfJar);
+                throw new IOException(entryName + " entry missing from " + selfJar);
             }
             Files.createDirectories(target.getParent());
             Path tmp = target.resolveSibling(target.getFileName() + ".tmp");

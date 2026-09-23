@@ -12,6 +12,14 @@ import io.papermc.paper.tag.PreFlattenTagRegistrar;
 public final class LunarArcLifecycleEventTypeProvider implements LifecycleEventTypeProvider {
     private final TagEventTypeProvider tags = new TagProvider();
 
+    /** See {@link io.lunararcdevs.lunararc.common.server.LunarArcPaperServiceBootstrap}. */
+    public static void ensureInstalled() {
+        io.lunararcdevs.lunararc.common.server.LunarArcPaperServiceBootstrap.seedIfBroken(
+                LifecycleEventTypeProvider::provider,
+                "io.papermc.paper.plugin.lifecycle.event.types.LifecycleEventTypeProvider", "INSTANCE",
+                java.util.Optional.of(new LunarArcLifecycleEventTypeProvider()));
+    }
+
     @Override
     public <O extends LifecycleEventOwner, E extends LifecycleEvent> LifecycleEventType.Monitorable<O, E> monitor(
             String name, Class<? extends O> ownerClass) {

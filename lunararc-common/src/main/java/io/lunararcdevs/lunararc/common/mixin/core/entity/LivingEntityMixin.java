@@ -242,7 +242,8 @@ public abstract class LivingEntityMixin implements LivingEntityBridge {
         this.lunararc$healReason = org.bukkit.event.entity.EntityRegainHealthEvent.RegainReason.CUSTOM;
         this.lunararc$fastRegen = false;
         Object bukkit = ((io.lunararcdevs.lunararc.common.bridge.EntityBridge) entity).lunararc$getBukkitEntity();
-        if (!(bukkit instanceof org.bukkit.entity.LivingEntity living) || entity.level().isClientSide) {
+        if (!(bukkit instanceof org.bukkit.entity.LivingEntity living) || entity.level().isClientSide
+                || !org.bukkit.Bukkit.isPrimaryThread()) {
             original.call(amount);
             return;
         }
