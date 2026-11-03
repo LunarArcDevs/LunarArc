@@ -8,6 +8,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * Loads the locale files in {@code locale/}. A value is a string, or an array of strings that are joined with line breaks so
+ * multi-line text (the logo) can be read as lines. Colours and styles are written as tags and become terminal escapes when read:
+ * {@code <reset> <bold> <italic> <underline> <red> <green> <yellow> <blue> <magenta> <cyan>}. Raw escapes in old files still work.
+ */
 public class TranslationManager {
     private static final String DEFAULT_LOCALE = "en_gb";
     private static final Map<String, JsonObject> cache = new java.util.concurrent.ConcurrentHashMap<>();
@@ -109,8 +114,33 @@ public class TranslationManager {
             json = cache.get(locale);
         }
         if (json != null && json.has(key)) {
-            return json.get(key).getAsString();
+            return render(json.get(key));
         }
         return null;
     }
+
+    private static String render(com.google.gson.JsonElement value) {
+        String text;
+        if (value.isJsonArray()) {
+            java.util.List<String> lines = new java.util.ArrayList<>();
+            for (com.google.gson.JsonElement line : value.getAsJsonArray()) lines.add(line.getAsString());
+            text = String.join("\n", lines);
+        } else {
+            text = value.getAsString();
+        }
+        return applyStyles(text);
+    }
+
+    private static String applyStyles(String text) {
+        if (text.indexOf('<') < 0) return text;
+        for (String[] style : STYLES) {
+            text = text.replace(style[0], style[1]);
+        }
+        return text;
+    }
+
+    private static final String[][] STYLES = {
+            {"<reset>", "\u001b[0m"}, {"<bold>", "\u001b[1m"}, {"<italic>", "\u001b[3m"}, {"<underline>", "\u001b[4m"},
+            {"<red>", "\u001b[31m"}, {"<green>", "\u001b[32m"}, {"<yellow>", "\u001b[33m"}, {"<blue>", "\u001b[34m"},
+            {"<magenta>", "\u001b[35m"}, {"<cyan>", "\u001b[36m"}};
 }

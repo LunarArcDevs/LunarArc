@@ -15,6 +15,7 @@ public final class LunarArcDeathCapture {
         public final List<ItemStack> items = new ArrayList<>();
         public int exp;
         public boolean cancelled;
+        boolean captureItems = true;
 
         Capture(LivingEntity entity) {
             this.entity = entity;
@@ -42,6 +43,13 @@ public final class LunarArcDeathCapture {
         return capture;
     }
 
+    /** Captures only the experience an entity drops; its items spawn normally (player deaths, see ServerPlayerMixin). */
+    public static Capture beginExperienceOnly(LivingEntity entity) {
+        Capture capture = begin(entity);
+        capture.captureItems = false;
+        return capture;
+    }
+
     public static void end(Capture previous) {
         if (previous == null) CURRENT.remove();
         else CURRENT.set(previous);
@@ -53,7 +61,7 @@ public final class LunarArcDeathCapture {
 
     public static boolean captureEntity(Entity added) {
         Capture capture = CURRENT.get();
-        if (capture == null) return false;
+        if (capture == null || !capture.captureItems) return false;
         if (added instanceof ItemEntity item && item.distanceToSqr(capture.entity) < 64.0D) {
             if (!item.getItem().isEmpty()) capture.items.add(item.getItem().copy());
             return true;

@@ -45,6 +45,7 @@
     "core.world.LevelMixin",
     "core.world.NeighborUpdaterPhysicsMixin",
     "core.world.ServerLevelMixin",
+    "core.world.ServerLevelActivationRangeMixin",
     "core.world.ServerLevelEntityCallbacksMixin",
     "core.world.blockentity.BeehiveBlockEntityMixin",
     "core.world.ChunkAccessMixin",

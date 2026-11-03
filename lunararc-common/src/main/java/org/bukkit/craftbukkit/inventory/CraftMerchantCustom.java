@@ -28,6 +28,7 @@ public final class CraftMerchantCustom implements Merchant, org.bukkit.craftbukk
     }
 
     public net.minecraft.world.item.trading.Merchant getHandle() { return merchant; }
+    public Component getTitle() { return merchant.getScoreboardDisplayName(); }
     @Override public net.minecraft.world.item.trading.Merchant getMerchant() { return merchant; }
 
     @Override public @NotNull List<MerchantRecipe> getRecipes() {

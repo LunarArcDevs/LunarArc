@@ -69,7 +69,7 @@ public final class LunarArcRegistryEntries {
         });
     }
 
-    private static final class CraftGameEvent extends org.bukkit.GameEvent {
+    public static final class CraftGameEvent extends org.bukkit.GameEvent implements org.bukkit.craftbukkit.util.Handleable<net.minecraft.world.level.gameevent.GameEvent> {
         private final NamespacedKey key;
         private final net.minecraft.world.level.gameevent.GameEvent handle;
 
@@ -201,7 +201,7 @@ public final class LunarArcRegistryEntries {
                 : key.toString();
     }
 
-    private static final class CraftCatType implements org.bukkit.entity.Cat.Type {
+    public static final class CraftCatType implements org.bukkit.entity.Cat.Type, org.bukkit.craftbukkit.util.Handleable<net.minecraft.world.entity.animal.feline.CatVariant> {
         private final NamespacedKey key; private final int ordinal;
         private final net.minecraft.world.entity.animal.feline.CatVariant handle;
         CraftCatType(NamespacedKey key, int ordinal, net.minecraft.world.entity.animal.feline.CatVariant handle) {
@@ -217,7 +217,7 @@ public final class LunarArcRegistryEntries {
         @Override public String toString() { return name(); }
     }
 
-    private static final class CraftFrogVariant implements org.bukkit.entity.Frog.Variant {
+    public static final class CraftFrogVariant implements org.bukkit.entity.Frog.Variant, org.bukkit.craftbukkit.util.Handleable<net.minecraft.world.entity.animal.frog.FrogVariant> {
         private final NamespacedKey key; private final int ordinal;
         private final net.minecraft.world.entity.animal.frog.FrogVariant handle;
         CraftFrogVariant(NamespacedKey key, int ordinal, net.minecraft.world.entity.animal.frog.FrogVariant handle) {
@@ -233,7 +233,7 @@ public final class LunarArcRegistryEntries {
         @Override public String toString() { return name(); }
     }
 
-    private static final class CraftVillagerType implements org.bukkit.entity.Villager.Type {
+    public static final class CraftVillagerType implements org.bukkit.entity.Villager.Type, org.bukkit.craftbukkit.util.Handleable<net.minecraft.world.entity.npc.villager.VillagerType> {
         private final NamespacedKey key; private final int ordinal;
         private final net.minecraft.world.entity.npc.villager.VillagerType handle;
         CraftVillagerType(NamespacedKey key, int ordinal, net.minecraft.world.entity.npc.villager.VillagerType handle) {
@@ -249,7 +249,7 @@ public final class LunarArcRegistryEntries {
         @Override public String toString() { return name(); }
     }
 
-    private static final class CraftVillagerProfession implements org.bukkit.entity.Villager.Profession {
+    public static final class CraftVillagerProfession implements org.bukkit.entity.Villager.Profession, org.bukkit.craftbukkit.util.Handleable<net.minecraft.world.entity.npc.villager.VillagerProfession> {
         private final NamespacedKey key; private final int ordinal;
         private final net.minecraft.world.entity.npc.villager.VillagerProfession handle;
         CraftVillagerProfession(NamespacedKey key, int ordinal, net.minecraft.world.entity.npc.villager.VillagerProfession handle) {
@@ -279,7 +279,7 @@ public final class LunarArcRegistryEntries {
         });
     }
 
-    private static final class CraftWolfVariant implements org.bukkit.entity.Wolf.Variant {
+    public static final class CraftWolfVariant implements org.bukkit.entity.Wolf.Variant, org.bukkit.craftbukkit.util.Handleable<net.minecraft.world.entity.animal.wolf.WolfVariant> {
         private final NamespacedKey key;
         private final net.minecraft.world.entity.animal.wolf.WolfVariant handle;
         CraftWolfVariant(NamespacedKey key, net.minecraft.world.entity.animal.wolf.WolfVariant handle) {

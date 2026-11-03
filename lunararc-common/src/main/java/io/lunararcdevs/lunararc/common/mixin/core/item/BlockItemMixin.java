@@ -13,6 +13,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(BlockItem.class)
 public abstract class BlockItemMixin {
+    @org.spongepowered.asm.mixin.Unique
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("LunarArc");
 
     /**
      * Bukkit's BlockPlaceEvent describes a block that has already been placed (getBlockPlaced is the new block, getBlockReplacedState the
@@ -40,6 +42,10 @@ public abstract class BlockItemMixin {
         org.bukkit.event.block.BlockPlaceEvent event = org.bukkit.craftbukkit.event.CraftEventFactory.callBlockPlaceEvent(
                 serverLevel, placePos, serverPlayer, context.getHand(), state);
         io.lunararcdevs.lunararc.common.mod.util.LunarArcBlockPlaceCapture.capture(serverPlayer, placePos, event);
+        net.minecraft.world.item.ItemStack held = serverPlayer.getItemInHand(context.getHand());
+        LOGGER.debug("[place] {} placed {} at {} (held {} x{}, custom data={}, event cancelled={})", serverPlayer.getScoreboardName(), state.getBlock(), placePos,
+                held.getItem(), held.getCount(), held.get(net.minecraft.core.component.DataComponents.CUSTOM_DATA),
+                event != null && event.isCancelled());
 
         if (event != null && event.isCancelled()) {
             replaced.update(true, false);

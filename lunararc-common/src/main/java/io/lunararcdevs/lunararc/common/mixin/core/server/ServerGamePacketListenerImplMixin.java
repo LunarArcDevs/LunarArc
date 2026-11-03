@@ -319,11 +319,7 @@ public abstract class ServerGamePacketListenerImplMixin {
 
     @Inject(method = "handlePlayerAction", at = @At("HEAD"), cancellable = true, require = 0)
     private void lunararc$onSwapHands(ServerboundPlayerActionPacket packet, CallbackInfo ci) {
-        if (!this.player.server.isSameThread()) {
-            this.player.server.execute(() -> ((ServerGamePacketListenerImpl) (Object) this).handlePlayerAction(packet));
-            ci.cancel();
-            return;
-        }
+        this.lunararc$runInPacketOrder(packet);
         if (packet.getAction() != ServerboundPlayerActionPacket.Action.SWAP_ITEM_WITH_OFFHAND) {
             return;
         }
@@ -458,11 +454,7 @@ public abstract class ServerGamePacketListenerImplMixin {
     private void lunararc$onAnimation(
             net.minecraft.network.protocol.game.ServerboundSwingPacket packet,
             CallbackInfo ci) {
-        if (!this.player.server.isSameThread()) {
-            this.player.server.execute(() -> ((ServerGamePacketListenerImpl) (Object) this).handleAnimate(packet));
-            ci.cancel();
-            return;
-        }
+        this.lunararc$runInPacketOrder(packet);
         Object bukkit = ((EntityBridge) this.player).lunararc$getBukkitEntity();
         if (!(bukkit instanceof Player bukkitPlayer)) return;
 
@@ -526,11 +518,7 @@ public abstract class ServerGamePacketListenerImplMixin {
      */
     @Inject(method = "handleUseItem", at = @At("HEAD"), cancellable = true, require = 0)
     private void lunararc$onRightClickAir(ServerboundUseItemPacket packet, CallbackInfo ci) {
-        if (!this.player.server.isSameThread()) {
-            this.player.server.execute(() -> ((ServerGamePacketListenerImpl) (Object) this).handleUseItem(packet));
-            ci.cancel();
-            return;
-        }
+        this.lunararc$runInPacketOrder(packet);
         net.minecraft.world.InteractionHand hand = packet.getHand();
         net.minecraft.world.item.ItemStack stack = this.player.getItemInHand(hand);
         io.lunararcdevs.lunararc.common.bridge.ServerPlayerGameModeBridge gameMode =
@@ -652,11 +640,7 @@ public abstract class ServerGamePacketListenerImplMixin {
 
     @Inject(method = "handleSetCarriedItem", at = @At("HEAD"), cancellable = true, require = 0)
     private void lunararc$onHeldItemChange(ServerboundSetCarriedItemPacket packet, CallbackInfo ci) {
-        if (!this.player.server.isSameThread()) {
-            this.player.server.execute(() -> ((ServerGamePacketListenerImpl) (Object) this).handleSetCarriedItem(packet));
-            ci.cancel();
-            return;
-        }
+        this.lunararc$runInPacketOrder(packet);
 
         int slot = packet.getSlot();
         if (slot < 0 || slot >= Inventory.getSelectionSize() || slot == this.player.getInventory().selected) {
@@ -710,11 +694,7 @@ public abstract class ServerGamePacketListenerImplMixin {
 
     @Inject(method = "handlePlayerCommand", at = @At("HEAD"), cancellable = true, require = 0)
     private void lunararc$onPlayerCommandState(ServerboundPlayerCommandPacket packet, CallbackInfo ci) {
-        if (!this.player.server.isSameThread()) {
-            this.player.server.execute(() -> ((ServerGamePacketListenerImpl) (Object) this).handlePlayerCommand(packet));
-            ci.cancel();
-            return;
-        }
+        this.lunararc$runInPacketOrder(packet);
         Object bukkit = ((EntityBridge) this.player).lunararc$getBukkitEntity();
         if (!(bukkit instanceof Player bukkitPlayer)) {
             return;
@@ -734,11 +714,7 @@ public abstract class ServerGamePacketListenerImplMixin {
 
     @Inject(method = "handlePlayerAbilities", at = @At("HEAD"), cancellable = true, require = 0)
     private void lunararc$onFlightToggle(ServerboundPlayerAbilitiesPacket packet, CallbackInfo ci) {
-        if (!this.player.server.isSameThread()) {
-            this.player.server.execute(() -> ((ServerGamePacketListenerImpl) (Object) this).handlePlayerAbilities(packet));
-            ci.cancel();
-            return;
-        }
+        this.lunararc$runInPacketOrder(packet);
         boolean requested = packet.isFlying();
         if (requested == this.player.getAbilities().flying || !this.player.getAbilities().mayfly) {
             return;
@@ -758,11 +734,7 @@ public abstract class ServerGamePacketListenerImplMixin {
 
     @Inject(method = "handleSetCreativeModeSlot", at = @At("HEAD"), cancellable = true, require = 0)
     private void lunararc$onCreativeSlot(ServerboundSetCreativeModeSlotPacket packet, CallbackInfo ci) {
-        if (!this.player.server.isSameThread()) {
-            this.player.server.execute(() -> ((ServerGamePacketListenerImpl) (Object) this).handleSetCreativeModeSlot(packet));
-            ci.cancel();
-            return;
-        }
+        this.lunararc$runInPacketOrder(packet);
         if (!this.player.gameMode.isCreative()) {
             return;
         }
@@ -802,10 +774,7 @@ public abstract class ServerGamePacketListenerImplMixin {
 
     @Inject(method = "handleContainerClick", at = @At("HEAD"), cancellable = true, require = 0)
     private void lunararc$ensureContainerClickThread(ServerboundContainerClickPacket packet, CallbackInfo ci) {
-        if (!this.player.server.isSameThread()) {
-            this.player.server.execute(() -> ((ServerGamePacketListenerImpl) (Object) this).handleContainerClick(packet));
-            ci.cancel();
-        }
+        this.lunararc$runInPacketOrder(packet);
     }
 
     @Inject(
@@ -1033,11 +1002,7 @@ public abstract class ServerGamePacketListenerImplMixin {
     @Inject(method = "handleSelectTrade", at = @At("HEAD"), cancellable = true, require = 0)
     private void lunararc$tradeSelect(net.minecraft.network.protocol.game.ServerboundSelectTradePacket packet,
                                       CallbackInfo ci) {
-        if (!this.player.server.isSameThread()) {
-            this.player.server.execute(() -> ((ServerGamePacketListenerImpl) (Object) this).handleSelectTrade(packet));
-            ci.cancel();
-            return;
-        }
+        this.lunararc$runInPacketOrder(packet);
         if (!(this.player.containerMenu instanceof net.minecraft.world.inventory.MerchantMenu)) return;
         Object bukkit = ((EntityBridge) this.player).lunararc$getBukkitEntity();
         if (!(bukkit instanceof org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer)) return;
@@ -1054,11 +1019,7 @@ public abstract class ServerGamePacketListenerImplMixin {
 
     @Inject(method = "handleContainerClose", at = @At("HEAD"), cancellable = true, require = 0)
     private void lunararc$onContainerClose(ServerboundContainerClosePacket packet, CallbackInfo ci) {
-        if (!this.player.server.isSameThread()) {
-            this.player.server.execute(() -> ((ServerGamePacketListenerImpl) (Object) this).handleContainerClose(packet));
-            ci.cancel();
-            return;
-        }
+        this.lunararc$runInPacketOrder(packet);
         if (this.player.containerMenu == this.player.inventoryMenu) {
             return;
         }
@@ -1079,5 +1040,17 @@ public abstract class ServerGamePacketListenerImplMixin {
     private void lunararc$recipeSettings(net.minecraft.network.protocol.game.ServerboundRecipeBookChangeSettingsPacket packet, CallbackInfo ci) {
         if (!this.player.server.isSameThread()) return;
         io.lunararcdevs.lunararc.common.event.LunarArcMoreEvents.recipeBookSettings(this.player, packet.getBookType(), packet.isOpen(), packet.isFiltering());
+    }
+
+    /**
+     * Off the main thread, queues the packet on the connection's own packet processor and throws vanilla's
+     * RunningOnDifferentThreadException, exactly like the first line of each vanilla handler. Re-queueing through
+     * server.execute instead could run these actions out of order with packets vanilla queues itself
+     * (for example a hotbar switch against an attack).
+     */
+    @org.spongepowered.asm.mixin.Unique
+    private <T extends net.minecraft.network.protocol.Packet<net.minecraft.network.protocol.game.ServerGamePacketListener>> void lunararc$runInPacketOrder(T packet) {
+        net.minecraft.network.protocol.PacketUtils.ensureRunningOnSameThread(
+                packet, (ServerGamePacketListenerImpl) (Object) this, this.player.level());
     }
 }

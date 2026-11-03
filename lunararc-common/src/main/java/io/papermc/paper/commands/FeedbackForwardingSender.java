@@ -35,14 +35,15 @@ public final class FeedbackForwardingSender extends ServerCommandSender {
                 net.minecraft.network.chat.Component.literal(getName()), minecraft, null);
     }
 
-    private final class Source implements net.minecraft.commands.CommandSource {
+    private final class Source implements net.minecraft.commands.CommandSource,
+            io.lunararcdevs.lunararc.common.bridge.CommandSourceBridge {
         @Override public void sendSystemMessage(net.minecraft.network.chat.Component message) {
             feedback.accept(io.papermc.paper.adventure.PaperAdventure.asAdventure(message));
         }
         @Override public boolean acceptsSuccess() { return true; }
         @Override public boolean acceptsFailure() { return true; }
         @Override public boolean shouldInformAdmins() { return false; }
-        public org.bukkit.command.CommandSender getBukkitSender(net.minecraft.commands.CommandSourceStack stack) {
+        @Override public org.bukkit.command.CommandSender lunararc$getBukkitSender(net.minecraft.commands.CommandSourceStack stack) {
             return FeedbackForwardingSender.this;
         }
     }

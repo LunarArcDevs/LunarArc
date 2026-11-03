@@ -260,27 +260,33 @@ public class CraftItemMeta implements ItemMeta, org.bukkit.inventory.meta.Damage
     }
 
 
-    private static final Set<net.minecraft.core.component.DataComponentType<?>> HANDLED_COMPONENT_TYPES = buildHandledComponentTypes();
+    /**
+     * The components this meta reads and writes itself; everything else is carried through untouched. Built from typed constants, not by
+     * reflecting on names: on Fabric/Quilt that lookup found nothing, so every component counted as unhandled and the stale copy was
+     * written back over the new one (a plugin's item data vanished). A holder class keeps DataComponents from loading with CraftItemMeta.
+     */
+    private static final class Handled {
+        static final Set<net.minecraft.core.component.DataComponentType<?>> TYPES = build();
 
-    private static Set<net.minecraft.core.component.DataComponentType<?>> buildHandledComponentTypes() {
-        Set<net.minecraft.core.component.DataComponentType<?>> handled = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (String name : new String[]{
-                "CUSTOM_NAME", "ITEM_NAME", "LORE", "UNBREAKABLE", "CUSTOM_MODEL_DATA",
-                "ENCHANTMENTS", "ENCHANTMENT_GLINT_OVERRIDE", "MAX_STACK_SIZE", "REPAIR_COST",
-                "ATTRIBUTE_MODIFIERS", "TOOL", "FOOD", "JUKEBOX_PLAYABLE", "USE_REMAINDER",
-                "TOOLTIP_STYLE", "GLIDER", "FIRE_RESISTANT", "HIDE_TOOLTIP", "RARITY", "CUSTOM_DATA",
-                "DAMAGE", "MAX_DAMAGE", "WRITABLE_BOOK_CONTENT", "WRITTEN_BOOK_CONTENT", "FIREWORKS", "FIREWORK_EXPLOSION", "PROFILE", "NOTE_BLOCK_SOUND", "TRIM", "BANNER_PATTERNS"
-        }) {
-            Object type = componentType(name);
-            if (type instanceof net.minecraft.core.component.DataComponentType<?> dct) handled.add(dct);
+        private static Set<net.minecraft.core.component.DataComponentType<?>> build() {
+            Set<net.minecraft.core.component.DataComponentType<?>> handled = Collections.newSetFromMap(new IdentityHashMap<>());
+            Collections.addAll(handled,
+                    DataComponents.CUSTOM_NAME, DataComponents.ITEM_NAME, DataComponents.LORE, DataComponents.UNBREAKABLE,
+                    DataComponents.CUSTOM_MODEL_DATA, DataComponents.ENCHANTMENTS, DataComponents.ENCHANTMENT_GLINT_OVERRIDE,
+                    DataComponents.MAX_STACK_SIZE, DataComponents.REPAIR_COST, DataComponents.ATTRIBUTE_MODIFIERS, DataComponents.TOOL,
+                    DataComponents.FOOD, DataComponents.JUKEBOX_PLAYABLE, DataComponents.USE_REMAINDER, DataComponents.TOOLTIP_STYLE,
+                    DataComponents.GLIDER, DataComponents.RARITY, DataComponents.CUSTOM_DATA, DataComponents.DAMAGE,
+                    DataComponents.MAX_DAMAGE, DataComponents.WRITABLE_BOOK_CONTENT, DataComponents.WRITTEN_BOOK_CONTENT,
+                    DataComponents.FIREWORKS, DataComponents.FIREWORK_EXPLOSION, DataComponents.PROFILE, DataComponents.NOTE_BLOCK_SOUND,
+                    DataComponents.TRIM, DataComponents.BANNER_PATTERNS);
+            return handled;
         }
-        return handled;
     }
 
     private void captureUnhandledComponents(ItemStack nms) {
         try {
             for (Map.Entry<net.minecraft.core.component.DataComponentType<?>, Optional<?>> entry : nms.getComponentsPatch().entrySet()) {
-                if (!HANDLED_COMPONENT_TYPES.contains(entry.getKey())) {
+                if (!Handled.TYPES.contains(entry.getKey())) {
                     unhandledDataComponents.put(entry.getKey(), entry.getValue());
                 }
             }
@@ -363,27 +369,35 @@ public class CraftItemMeta implements ItemMeta, org.bukkit.inventory.meta.Damage
         }
     }
 
-    private static Object componentType(String field) {
-        try { return DataComponents.class.getField(field).get(null); } catch (Throwable ignored) { return null; }
+    // Typed constants rather than DataComponents.class.getField(name): reflection by Mojang name finds nothing on Fabric/Quilt, where the
+    // game's fields carry intermediary names, so none of these components were ever read or written there. FIRE_RESISTANT and
+    // HIDE_TOOLTIP are no longer components in 1.21.11 and stay unmapped.
+    private static net.minecraft.core.component.DataComponentType<?> componentType(String field) {
+        return switch (field) {
+            case "TOOL" -> DataComponents.TOOL;
+            case "FOOD" -> DataComponents.FOOD;
+            case "JUKEBOX_PLAYABLE" -> DataComponents.JUKEBOX_PLAYABLE;
+            case "USE_REMAINDER" -> DataComponents.USE_REMAINDER;
+            case "TOOLTIP_STYLE" -> DataComponents.TOOLTIP_STYLE;
+            case "GLIDER" -> DataComponents.GLIDER;
+            case "RARITY" -> DataComponents.RARITY;
+            case "ENCHANTMENTS" -> DataComponents.ENCHANTMENTS;
+            case "ATTRIBUTE_MODIFIERS" -> DataComponents.ATTRIBUTE_MODIFIERS;
+            default -> null;
+        };
     }
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private static Object getComponent(ItemStack stack, String field) {
-        Object type = componentType(field); if (type == null) return null;
-        try {
-            for (java.lang.reflect.Method m : stack.getClass().getMethods()) {
-                if (!m.getName().equals("get") || m.getParameterCount() != 1) continue;
-                if (m.getParameterTypes()[0].isInstance(type)) return m.invoke(stack, type);
-            }
-        } catch (Throwable ignored) {}
-        return null;
+        net.minecraft.core.component.DataComponentType type = componentType(field);
+        return type == null ? null : stack.get(type);
     }
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private static void setComponent(ItemStack stack, String field, Object value) {
-        Object type = componentType(field); if (type == null) return;
+        net.minecraft.core.component.DataComponentType type = componentType(field);
+        if (type == null) return;
         try {
-            if (value == null) {
-                for (java.lang.reflect.Method m : stack.getClass().getMethods()) if (m.getName().equals("remove") && m.getParameterCount()==1 && m.getParameterTypes()[0].isInstance(type)) { m.invoke(stack,type); return; }
-            } else {
-                for (java.lang.reflect.Method m : stack.getClass().getMethods()) if (m.getName().equals("set") && m.getParameterCount()==2 && m.getParameterTypes()[0].isInstance(type)) { m.invoke(stack,type,value); return; }
-            }
+            if (value == null) stack.remove(type);
+            else stack.set(type, value);
         } catch (Throwable ignored) {}
     }
     private void readNewComponents(ItemStack nms) {
@@ -448,52 +462,29 @@ public class CraftItemMeta implements ItemMeta, org.bukkit.inventory.meta.Damage
     private void writeUnitFlag(ItemStack nms, String name, boolean enabled) {
         if (!enabled) { setComponent(nms, name, null); return; }
         Object existing = rawDataComponents.get(name); if (existing != null) { setComponent(nms,name,existing); return; }
-        try {
-            Class<?> unit = Class.forName("com.mojang.datafixers.util.Unit");
-            Object instance = unit.getField("INSTANCE").get(null); setComponent(nms,name,instance);
-        } catch (Throwable ignored) {}
+        setComponent(nms, name, net.minecraft.util.Unit.INSTANCE);
     }
 
+    // Direct calls on purpose: reflecting with Mojang names (copyTag, set, of) finds nothing on Fabric/Quilt, where the game's classes carry
+    // intermediary names at runtime, and the swallowed exception silently dropped every plugin's item data there.
     private void loadPersistentData(ItemStack nms) {
-        try {
-            Object customData = nms.get(DataComponents.CUSTOM_DATA);
-            if (customData == null) return;
-            Object copied = customData.getClass().getMethod("copyTag").invoke(customData);
-            if (!(copied instanceof net.minecraft.nbt.CompoundTag root)) return;
-            net.minecraft.nbt.Tag values = root.get("PublicBukkitValues");
-            if (values instanceof net.minecraft.nbt.CompoundTag compound) {
-                persistentDataContainer.fromTag(compound);
-            }
-        } catch (ReflectiveOperationException ignored) {
+        net.minecraft.world.item.component.CustomData customData = nms.get(DataComponents.CUSTOM_DATA);
+        if (customData == null) return;
+        net.minecraft.nbt.CompoundTag root = customData.copyTag();
+        net.minecraft.nbt.Tag values = root.get("PublicBukkitValues");
+        if (values instanceof net.minecraft.nbt.CompoundTag compound) {
+            persistentDataContainer.fromTag(compound);
         }
     }
 
     private void applyPersistentData(ItemStack nms) {
-        try {
-            net.minecraft.nbt.CompoundTag root = new net.minecraft.nbt.CompoundTag();
-            Object current = nms.get(DataComponents.CUSTOM_DATA);
-            if (current != null) {
-                try {
-                    Object copied = current.getClass().getMethod("copyTag").invoke(current);
-                    if (copied instanceof net.minecraft.nbt.CompoundTag compound) root = compound;
-                } catch (ReflectiveOperationException ignored) {
-                }
-            }
+        net.minecraft.world.item.component.CustomData current = nms.get(DataComponents.CUSTOM_DATA);
+        net.minecraft.nbt.CompoundTag root = current == null ? new net.minecraft.nbt.CompoundTag() : current.copyTag();
 
-            if (persistentDataContainer.isEmpty()) root.remove("PublicBukkitValues");
-            else root.put("PublicBukkitValues", persistentDataContainer.toTag());
+        if (persistentDataContainer.isEmpty()) root.remove("PublicBukkitValues");
+        else root.put("PublicBukkitValues", persistentDataContainer.toTag());
 
-            Class<?> customDataClass = io.lunararcdevs.lunararc.common.mod.LunarArcReflectionBridge.forName("net.minecraft.world.item.component.CustomData");
-            Object replacement = customDataClass.getMethod("of", net.minecraft.nbt.CompoundTag.class).invoke(null, root);
-
-            for (java.lang.reflect.Method method : nms.getClass().getMethods()) {
-                if (!method.getName().equals("set") || method.getParameterCount() != 2) continue;
-                if (!method.getParameterTypes()[0].isInstance(DataComponents.CUSTOM_DATA)) continue;
-                method.invoke(nms, DataComponents.CUSTOM_DATA, replacement);
-                return;
-            }
-        } catch (ReflectiveOperationException ignored) {
-        }
+        nms.set(DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.of(root));
     }
 
 

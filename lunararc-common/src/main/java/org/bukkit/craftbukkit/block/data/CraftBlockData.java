@@ -239,7 +239,15 @@ public class CraftBlockData implements BlockData {
             return;
         }
         Class<? extends Block> blockClass = null;
-        try (InputStream input = loader.getResourceAsStream(generated.getName().replace('.', '/') + ".class")) {
+        try {
+            // Craft<Name> is the implementation of <Name>Block: exact for the subclass blocks (PlayerHeadBlock, WitherSkullBlock) that
+            // share their static properties with a parent and would otherwise all resolve to that parent
+            Class<?> guess = Class.forName("net.minecraft.world.level.block." + generated.getSimpleName().substring("Craft".length()) + "Block", false, loader);
+            if (Block.class.isAssignableFrom(guess)) blockClass = (Class<? extends Block>) guess;
+        } catch (ClassNotFoundException | LinkageError ex) {
+            // no block of that name: read the block class from the static initializer below
+        }
+        if (blockClass == null) try (InputStream input = loader.getResourceAsStream(generated.getName().replace('.', '/') + ".class")) {
             if (input != null) {
                 java.util.Set<String> owners = new java.util.LinkedHashSet<>();
                 new org.objectweb.asm.ClassReader(input).accept(new org.objectweb.asm.ClassVisitor(org.objectweb.asm.Opcodes.ASM9) {
@@ -266,15 +274,7 @@ public class CraftBlockData implements BlockData {
                 }
             }
         } catch (IOException ex) {
-            // fall through to the naming guess
-        }
-        if (blockClass == null) {
-            try {
-                Class<?> guess = Class.forName("net.minecraft.world.level.block." + generated.getSimpleName().substring("Craft".length()) + "Block", false, loader);
-                if (Block.class.isAssignableFrom(guess)) blockClass = (Class<? extends Block>) guess;
-            } catch (ClassNotFoundException | LinkageError ex) {
-                return;
-            }
+            // no readable class file: the block stays unmapped
         }
         if (blockClass != null) GENERATED_IMPLEMENTATIONS.putIfAbsent(blockClass, constructor);
     }

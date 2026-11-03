@@ -21,6 +21,12 @@ public class LunarArcConfig {
     private static boolean pluginDataReloadOnStartup = false;
     private static byte[] velocitySecret = new byte[0];
 
+    private static boolean activationRangeEnabled = false;
+    private static int activationMonsters = 32;
+    private static int activationAnimals = 32;
+    private static int activationVillagers = 32;
+    private static int activationMisc = 16;
+
     public static void load() {
         Properties props = readProps();
 
@@ -37,7 +43,24 @@ public class LunarArcConfig {
             props.setProperty("plugin-data.reload-on-startup", "false");
             changed = true;
         }
+        String[][] activation = {
+                {"experimental.activation-range.enabled", "false"}, {"experimental.activation-range.monsters", "32"}, {"experimental.activation-range.animals", "32"},
+                {"experimental.activation-range.villagers", "32"}, {"experimental.activation-range.misc", "16"}};
+        for (String[] entry : activation) {
+            if (!props.containsKey(entry[0])) {
+                props.setProperty(entry[0], entry[1]);
+                changed = true;
+            }
+        }
         if (changed) writeProps(props);
+        activationRangeEnabled = Boolean.parseBoolean(props.getProperty("experimental.activation-range.enabled", "false"));
+        activationMonsters = intProperty(props, "experimental.activation-range.monsters", 32);
+        activationAnimals = intProperty(props, "experimental.activation-range.animals", 32);
+        activationVillagers = intProperty(props, "experimental.activation-range.villagers", 32);
+        activationMisc = intProperty(props, "experimental.activation-range.misc", 16);
+        if (activationRangeEnabled) {
+            LOGGER.warn("[LunarArc] experimental.activation-range is enabled. It is experimental: mobs with no player nearby skip most ticks, which can affect mob farms and redstone-driven mobs.");
+        }
         pluginDataReloadOnStartup = Boolean.parseBoolean(props.getProperty("plugin-data.reload-on-startup", "false"));
 
         velocityEnabled = Boolean.parseBoolean(props.getProperty("proxy.velocity.enabled", "false"));
@@ -46,6 +69,21 @@ public class LunarArcConfig {
 
         LOGGER.debug("[LunarArc] Config loaded (velocity={}).", velocityEnabled);
     }
+
+    private static int intProperty(Properties props, String key, int fallback) {
+        try {
+            return Math.max(1, Integer.parseInt(props.getProperty(key, String.valueOf(fallback)).trim()));
+        } catch (NumberFormatException invalid) {
+            return fallback;
+        }
+    }
+
+    /** EXPERIMENTAL: whether mobs with no player nearby skip most of their ticking. Off by default (experimental.activation-range.enabled). */
+    public static boolean isActivationRangeEnabled() { return activationRangeEnabled; }
+    public static int getActivationRangeMonsters() { return activationMonsters; }
+    public static int getActivationRangeAnimals() { return activationAnimals; }
+    public static int getActivationRangeVillagers() { return activationVillagers; }
+    public static int getActivationRangeMisc() { return activationMisc; }
 
     static Properties readProps() {
         Properties props = new Properties();

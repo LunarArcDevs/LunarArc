@@ -541,67 +541,109 @@ public abstract class ServerPlayerMixin implements ServerPlayerClientOptionsBrid
         return original.call(tracker);
     }
 
-    @Redirect(
+    @Unique private boolean lunararc$deathDropsPending;
+
+    @WrapOperation(
             method = "die",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerPlayer;dropAllDeathLoot(Lnet/minecraft/server/level/ServerLevel;Lnet/minecraft/world/damagesource/DamageSource;)V"),
-            require = 0)
-    private void lunararc$playerDeathDropsServerPlayer(
-            ServerPlayer self, ServerLevel level, net.minecraft.world.damagesource.DamageSource source) {
-        this.lunararc$applyPlayerDeathDrops(self, level);
-    }
-
-    @Unique
-    private void lunararc$applyPlayerDeathDrops(ServerPlayer self, ServerLevel level) {
+            require = 1)
+    private void lunararc$playerDeathDrops(ServerPlayer self, ServerLevel level, net.minecraft.world.damagesource.DamageSource source,
+            Operation<Void> original) {
         org.bukkit.event.entity.PlayerDeathEvent event = this.lunararc$deathEvent;
-        if (event == null) return;
+        if (event == null) {
+            original.call(self, level, source);
+            return;
+        }
+        net.minecraft.world.entity.player.Inventory inventory = self.getInventory();
+        int size = inventory.getContainerSize();
+        java.util.List<net.minecraft.world.item.ItemStack> before = new java.util.ArrayList<>(size);
+        for (int slot = 0; slot < size; slot++) before.add(inventory.getItem(slot).copy());
+
+        java.util.List<org.bukkit.inventory.ItemStack> keep = new java.util.ArrayList<>(event.getItemsToKeep());
+        if (!event.getKeepInventory()) {
+            for (int slot = 0; slot < size; slot++) {
+                net.minecraft.world.item.ItemStack item = inventory.getItem(slot);
+                if (item.isEmpty()) continue;
+                // PREVENT_EQUIPMENT_DROP (curse of vanishing) items were never in getDrops(); vanilla destroys them
+                boolean stays = !net.minecraft.world.item.enchantment.EnchantmentHelper.has(
+                        item, net.minecraft.world.item.enchantment.EnchantmentEffectComponents.PREVENT_EQUIPMENT_DROP)
+                        && keep.remove(org.bukkit.craftbukkit.inventory.CraftItemStack.asBukkitCopy(item));
+                if (!stays) inventory.setItem(slot, net.minecraft.world.item.ItemStack.EMPTY);
+            }
+        }
+
+        // vanilla's own death XP is captured and discarded: the event's amount is awarded below instead
+        var previous = io.lunararcdevs.lunararc.common.event.LunarArcDeathCapture.current();
+        io.lunararcdevs.lunararc.common.event.LunarArcDeathCapture.beginExperienceOnly(self);
+        this.lunararc$deathDropsPending = !event.getKeepInventory();
+        try {
+            original.call(self, level, source);
+        } finally {
+            io.lunararcdevs.lunararc.common.event.LunarArcDeathCapture.end(previous);
+        }
+        if (this.lunararc$deathDropsPending) {
+            // vanilla skipped Inventory#dropAll (keepInventory gamerule on, but a plugin turned keepInventory off)
+            this.lunararc$deathDropsPending = false;
+            for (org.bukkit.inventory.ItemStack drop : event.getDrops()) {
+                net.minecraft.world.item.ItemStack nms = lunararc$toDrop(drop);
+                if (!nms.isEmpty()) self.spawnAtLocation(level, nms);
+            }
+        }
+        if (event.getKeepInventory()) {
+            // vanilla may still have destroyed vanishing items; a kept inventory stays exactly as it was
+            for (int slot = 0; slot < size; slot++) inventory.setItem(slot, before.get(slot));
+        }
 
         if (event.shouldDropExperience() && event.getDroppedExp() > 0) {
             net.minecraft.world.entity.ExperienceOrb.award(level, self.position(), event.getDroppedExp());
         }
-        if (event.getKeepInventory()) {
-            this.lunararc$captureDeathInventory(self);
-            return;
-        }
-
-        for (org.bukkit.inventory.ItemStack bukkitDrop : event.getDrops()) {
-            if (bukkitDrop == null || bukkitDrop.getType().isAir() || bukkitDrop.getAmount() <= 0) continue;
-            net.minecraft.world.item.ItemStack nms = org.bukkit.craftbukkit.inventory.CraftItemStack.asNMSCopy(bukkitDrop);
-            if (!nms.isEmpty() && self.level() instanceof ServerLevel dropLevel) self.spawnAtLocation(dropLevel, nms);
-        }
-
-        java.util.List<org.bukkit.inventory.ItemStack> keep = new java.util.ArrayList<>(event.getItemsToKeep());
-        for (int slot = 0; slot < self.getInventory().getContainerSize(); slot++) {
-            net.minecraft.world.item.ItemStack item = self.getInventory().getItem(slot);
-            if (item.isEmpty()) continue;
-            if (net.minecraft.world.item.enchantment.EnchantmentHelper.has(
-                    item, net.minecraft.world.item.enchantment.EnchantmentEffectComponents.PREVENT_EQUIPMENT_DROP)) {
-                // Vanilla/Paper retain items marked PREVENT_EQUIPMENT_DROP. They were never
-                // exposed through getDrops(), so leave the authoritative inventory slot intact.
-                continue;
-            }
-            org.bukkit.inventory.ItemStack bukkitItem = org.bukkit.craftbukkit.inventory.CraftItemStack.asBukkitCopy(item);
-            boolean keepThis = false;
-            java.util.Iterator<org.bukkit.inventory.ItemStack> iterator = keep.iterator();
-            while (iterator.hasNext()) {
-                org.bukkit.inventory.ItemStack requested = iterator.next();
-                if (bukkitItem.equals(requested)) {
-                    iterator.remove();
-                    keepThis = true;
-                    break;
-                }
-            }
-            if (!keepThis) self.getInventory().setItem(slot, net.minecraft.world.item.ItemStack.EMPTY);
-        }
-        if (!keep.isEmpty()) {
+        if (!event.getKeepInventory() && !keep.isEmpty()) {
             org.bukkit.entity.Player player = (org.bukkit.entity.Player)
                     ((io.lunararcdevs.lunararc.common.bridge.EntityBridge) self).lunararc$getBukkitEntity();
             for (org.bukkit.inventory.ItemStack extra : keep) {
-                if (extra != null && !extra.getType().isAir() && extra.getAmount() > 0) {
-                    player.getInventory().addItem(extra);
-                }
+                if (extra != null && !extra.getType().isAir() && extra.getAmount() > 0) player.getInventory().addItem(extra);
             }
         }
         this.lunararc$captureDeathInventory(self);
+    }
+
+    /**
+     * Called from Player#dropEquipment in place of Inventory#dropAll while a PlayerDeathEvent is applied. Drops the event's
+     * list through vanilla's dropAll in inventory-sized batches, so the drops scatter like vanilla's and pass through
+     * NeoForge's capture into LivingDropsEvent. Returns false to let vanilla's dropAll run untouched.
+     */
+    @Override
+    public boolean lunararc$dropDeathItems(Runnable dropAll) {
+        if (this.lunararc$deathEvent == null) return false;
+        // a plugin set keepInventory while the gamerule is off: the inventory stays, so vanilla must not drop it
+        if (this.lunararc$deathEvent.getKeepInventory()) return true;
+        if (!this.lunararc$deathDropsPending) return false;
+        this.lunararc$deathDropsPending = false;
+        net.minecraft.world.entity.player.Inventory inventory = ((ServerPlayer) (Object) this).getInventory();
+        int size = inventory.getContainerSize();
+        java.util.List<net.minecraft.world.item.ItemStack> stays = new java.util.ArrayList<>(size);
+        for (int slot = 0; slot < size; slot++) stays.add(inventory.getItem(slot));
+        inventory.clearContent();
+        int slot = 0;
+        for (org.bukkit.inventory.ItemStack drop : this.lunararc$deathEvent.getDrops()) {
+            net.minecraft.world.item.ItemStack nms = lunararc$toDrop(drop);
+            if (nms.isEmpty()) continue;
+            inventory.setItem(slot++, nms);
+            if (slot == size) {
+                dropAll.run();
+                slot = 0;
+            }
+        }
+        if (slot > 0) dropAll.run();
+        inventory.clearContent();
+        for (int i = 0; i < size; i++) inventory.setItem(i, stays.get(i));
+        return true;
+    }
+
+    @Unique
+    private static net.minecraft.world.item.ItemStack lunararc$toDrop(org.bukkit.inventory.ItemStack drop) {
+        if (drop == null || drop.getType().isAir() || drop.getAmount() <= 0) return net.minecraft.world.item.ItemStack.EMPTY;
+        return org.bukkit.craftbukkit.inventory.CraftItemStack.asNMSCopy(drop);
     }
 
     @Unique

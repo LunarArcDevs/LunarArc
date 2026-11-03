@@ -136,4 +136,12 @@ public abstract class PlayerMixin implements PlayerAffectsSpawningBridge, io.lun
             original.call(self);
         }
     }
+
+    @WrapOperation(method = "dropEquipment", require = 1,
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/player/Inventory;dropAll()V"))
+    private void lunararc$deathDrops(net.minecraft.world.entity.player.Inventory inventory, Operation<Void> original) {
+        if ((Object) this instanceof io.lunararcdevs.lunararc.common.bridge.ServerPlayerDeathBridge death
+                && death.lunararc$dropDeathItems(() -> original.call(inventory))) return;
+        original.call(inventory);
+    }
 }

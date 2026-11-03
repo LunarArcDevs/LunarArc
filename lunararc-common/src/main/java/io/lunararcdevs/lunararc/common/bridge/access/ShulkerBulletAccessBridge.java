@@ -2,7 +2,6 @@ package io.lunararcdevs.lunararc.common.bridge.access;
 
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
-import java.util.UUID;
 
 /** Normal runtime bridge implemented by the corresponding Mixin accessor/invoker. */
 public interface ShulkerBulletAccessBridge {
