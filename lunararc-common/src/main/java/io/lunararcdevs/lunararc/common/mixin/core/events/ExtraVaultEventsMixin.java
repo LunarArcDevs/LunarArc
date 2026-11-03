@@ -25,7 +25,7 @@ import org.spongepowered.asm.mixin.injection.At;
  * VaultDisplayItemEvent when the shown item is picked. A cancelled loot event also stops the player being marked
  * as rewarded.
  */
-@Mixin(targets = "net.minecraft.world.level.block.entity.vault.VaultBlockEntity$Server")
+@Mixin(net.minecraft.world.level.block.entity.vault.VaultBlockEntity.Server.class)
 public abstract class ExtraVaultEventsMixin {
     @Unique private static boolean lunararc$lootCancelled;
 

@@ -484,6 +484,8 @@ public class CraftServer implements Server {
     public final java.util.Set<net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>> worldLoadEventFired =
             java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    private final java.util.Map<net.minecraft.server.level.ServerLevel, CraftWorld> transientWorlds = new java.util.WeakHashMap<>();
+
     private CraftWorld craftWorld(net.minecraft.server.level.ServerLevel level) {
         // Fast path: an already-registered world needs no index maintenance. This is not a
         // micro-optimisation for its own sake - every chunk decoration looks its world up here,
@@ -491,7 +493,14 @@ public class CraftServer implements Server {
         // to hash a UUID out of the dimension name each time. Bulk terrain generation, such as a
         // random-teleport search walking far chunks, ran all of that per chunk.
         CraftWorld existing = worldByDimension.get(level.dimension());
-        if (existing != null) return existing;
+        if (existing != null) {
+            if (existing.getHandle() == level) return existing;
+            // a second level that shares a registered dimension key (a mod-owned or contraption world) must not be
+            // answered with the real world, or plugins would act on the wrong blocks; give it its own unlisted CraftWorld
+            synchronized (transientWorlds) {
+                return transientWorlds.computeIfAbsent(level, CraftWorld::new);
+            }
+        }
 
         CraftWorld craft = worldByDimension.computeIfAbsent(level.dimension(), ignored -> new CraftWorld(level));
         worldCache.putIfAbsent(craft.getUID(), craft);
@@ -1658,6 +1667,9 @@ public class CraftServer implements Server {
         } else if (org.bukkit.Tag.REGISTRY_GAME_EVENTS.equals(registry)) {
             if (clazz != org.bukkit.GameEvent.class) throw new IllegalArgumentException("Game-event tags require GameEvent values");
             keys = net.minecraft.core.registries.BuiltInRegistries.GAME_EVENT.getTags().map(net.minecraft.core.HolderSet.Named::key);
+        } else if (org.bukkit.tag.DamageTypeTags.REGISTRY_DAMAGE_TYPES.equals(registry)) {
+            if (clazz != org.bukkit.damage.DamageType.class) throw new IllegalArgumentException("Damage type tags require DamageType values");
+            keys = lunararcDamageTypes().getTags().map(net.minecraft.core.HolderSet.Named::key);
         } else {
             throw new IllegalArgumentException("Unsupported Bukkit tag registry: " + registry);
         }
@@ -1766,7 +1778,7 @@ public class CraftServer implements Server {
     @Override
     public @NotNull CommandSender createCommandSender(
             @NotNull Consumer<? super net.kyori.adventure.text.Component> feedback) {
-        return new org.bukkit.craftbukkit.command.FeedbackForwardingSender(feedback, this);
+        return new io.papermc.paper.commands.FeedbackForwardingSender(feedback, this);
     }
 
     @Override
@@ -1964,7 +1976,25 @@ public class CraftServer implements Server {
             }
             return lunararcTag(tag, values);
         }
+        if (org.bukkit.tag.DamageTypeTags.REGISTRY_DAMAGE_TYPES.equals(registry)) {
+            if (clazz != org.bukkit.damage.DamageType.class) throw new IllegalArgumentException("Damage type tags require DamageType values");
+            var lookup = lunararcDamageTypes();
+            var holders = lookup.get(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.DAMAGE_TYPE, location));
+            if (holders.isEmpty()) return null;
+            java.util.LinkedHashSet<T> values = new java.util.LinkedHashSet<>();
+            for (var holder : holders.get()) {
+                var id = lookup.getKey(holder.value());
+                if (id == null) continue;
+                org.bukkit.damage.DamageType type = org.bukkit.Registry.DAMAGE_TYPE.get(new NamespacedKey(id.getNamespace(), id.getPath()));
+                if (type != null) values.add(clazz.cast(type));
+            }
+            return lunararcTag(tag, values);
+        }
         throw new IllegalArgumentException("Unsupported Bukkit tag registry: " + registry);
+    }
+
+    private net.minecraft.core.Registry<net.minecraft.world.damagesource.DamageType> lunararcDamageTypes() {
+        return getServer().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.DAMAGE_TYPE);
     }
 
     private static <T extends Keyed> Tag<T> lunararcTag(NamespacedKey key, java.util.Set<T> values) {

@@ -224,6 +224,61 @@ public class CraftBlockData implements BlockData {
         }
     }
 
+    /**
+     * Paper 1.21.11's generated classes read the block's static properties directly instead of calling getEnum/getBoolean,
+     * so nothing registers them. Work out the block class from the fields their static initializer reads (the most derived
+     * owner), falling back to the Craft&lt;Name&gt; to &lt;Name&gt;Block naming.
+     */
+    @SuppressWarnings("unchecked")
+    private static void registerByBytecode(Class<?> generated, ClassLoader loader) {
+        if (!CraftBlockData.class.isAssignableFrom(generated) || generated == CraftBlockData.class) return;
+        Constructor<? extends CraftBlockData> constructor;
+        try {
+            constructor = ((Class<? extends CraftBlockData>) generated).getConstructor(BlockState.class);
+        } catch (NoSuchMethodException ex) {
+            return;
+        }
+        Class<? extends Block> blockClass = null;
+        try {
+            // Craft<Name> is the implementation of <Name>Block: exact for the subclass blocks (PlayerHeadBlock, WitherSkullBlock) that
+            // share their static properties with a parent and would otherwise all resolve to that parent
+            Class<?> guess = Class.forName("net.minecraft.world.level.block." + generated.getSimpleName().substring("Craft".length()) + "Block", false, loader);
+            if (Block.class.isAssignableFrom(guess)) blockClass = (Class<? extends Block>) guess;
+        } catch (ClassNotFoundException | LinkageError ex) {
+            // no block of that name: read the block class from the static initializer below
+        }
+        if (blockClass == null) try (InputStream input = loader.getResourceAsStream(generated.getName().replace('.', '/') + ".class")) {
+            if (input != null) {
+                java.util.Set<String> owners = new java.util.LinkedHashSet<>();
+                new org.objectweb.asm.ClassReader(input).accept(new org.objectweb.asm.ClassVisitor(org.objectweb.asm.Opcodes.ASM9) {
+                    @Override
+                    public org.objectweb.asm.MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
+                        if (!name.equals("<clinit>")) return null;
+                        return new org.objectweb.asm.MethodVisitor(org.objectweb.asm.Opcodes.ASM9) {
+                            @Override
+                            public void visitFieldInsn(int opcode, String owner, String fieldName, String fieldDesc) {
+                                if (opcode == org.objectweb.asm.Opcodes.GETSTATIC && owner.startsWith("net/minecraft/world/level/block/")) owners.add(owner);
+                            }
+                        };
+                    }
+                }, org.objectweb.asm.ClassReader.SKIP_DEBUG | org.objectweb.asm.ClassReader.SKIP_FRAMES);
+                for (String owner : owners) {
+                    Class<?> candidate;
+                    try {
+                        candidate = Class.forName(owner.replace('/', '.'), false, loader);
+                    } catch (ClassNotFoundException | LinkageError ex) {
+                        continue;
+                    }
+                    if (!Block.class.isAssignableFrom(candidate)) continue;
+                    if (blockClass == null || blockClass.isAssignableFrom(candidate)) blockClass = (Class<? extends Block>) candidate;
+                }
+            }
+        } catch (IOException ex) {
+            // no readable class file: the block stays unmapped
+        }
+        if (blockClass != null) GENERATED_IMPLEMENTATIONS.putIfAbsent(blockClass, constructor);
+    }
+
     private static void ensureGeneratedImplementationsLoaded() {
         if (generatedImplementationsLoaded) return;
         synchronized (GENERATED_IMPLEMENTATION_LOCK) {
@@ -242,11 +297,12 @@ public class CraftBlockData implements BlockData {
                         String className = line.trim();
                         if (className.isEmpty() || className.startsWith("#")) continue;
                         try {
-                            Class.forName(className, true, loader);
+                            Class<?> generated = Class.forName(className, true, loader);
+                            registerByBytecode(generated, loader);
                         } catch (ClassNotFoundException ex) {
-                            throw new IllegalStateException("Missing generated Paper 1.21.1 CraftBlockData class " + className, ex);
+                            throw new IllegalStateException("Missing generated Paper 1.21.11 CraftBlockData class " + className, ex);
                         } catch (LinkageError error) {
-                            throw new IllegalStateException("Could not link generated Paper 1.21.1 CraftBlockData class " + className, error);
+                            throw new IllegalStateException("Could not link generated Paper 1.21.11 CraftBlockData class " + className, error);
                         }
                     }
                 }

@@ -25,6 +25,9 @@ import org.bukkit.event.HandlerList;
 public final class LunarArcBlockEvents {
     private LunarArcBlockEvents() {}
 
+    /** The player taking the result out of an anvil, for the duration of AnvilMenu#onTake. */
+    public static final ThreadLocal<net.minecraft.world.entity.player.Player> ANVIL_TAKER = new ThreadLocal<>();
+
     private static boolean listened(HandlerList handlers) {
         return handlers.getRegisteredListeners().length != 0;
     }

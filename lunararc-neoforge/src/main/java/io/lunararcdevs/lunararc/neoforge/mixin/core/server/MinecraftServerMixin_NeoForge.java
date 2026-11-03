@@ -52,4 +52,9 @@ public abstract class MinecraftServerMixin_NeoForge implements MinecraftServerBr
     public boolean lunararc$loaderHandlesEntityJoinEvent() {
         return true;
     }
+
+    @Override
+    public boolean lunararc$loaderHandlesEntityTeleportEvent() {
+        return true;
+    }
 }

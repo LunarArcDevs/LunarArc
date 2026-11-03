@@ -37,6 +37,7 @@ dependencies {
     }
     modImplementation "net.fabricmc:fabric-loader:${libs.versions.fabric.loader.get()}"
     modImplementation libs.fabric.api
+    include libs.fabric.api
     modImplementation(libs.fabric.permissions.api) { transitive = false }
     include(libs.fabric.permissions.api) { transitive = false }
     common(project(path: ':lunararc-common', configuration: 'namedElements')) { transitive = false }

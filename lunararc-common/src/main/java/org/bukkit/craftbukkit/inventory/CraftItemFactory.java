@@ -262,7 +262,7 @@ public final class CraftItemFactory implements ItemFactory {
     @Override
     @Deprecated
     public @NotNull net.md_5.bungee.api.chat.hover.content.Content hoverContentOf(@NotNull ItemStack itemStack) {
-        throw new UnsupportedOperationException("BungeeCord item hover data cannot faithfully represent Minecraft 1.21.1 data components");
+        throw new UnsupportedOperationException("BungeeCord item hover data cannot faithfully represent Minecraft 1.21.11 data components");
     }
 
     @Override

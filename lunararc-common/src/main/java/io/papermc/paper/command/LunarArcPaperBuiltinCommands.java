@@ -5,6 +5,6 @@ public final class LunarArcPaperBuiltinCommands {
     }
 
     public static void register(org.bukkit.command.CommandMap commandMap) {
-        commandMap.register("bukkit", new org.bukkit.command.defaults.PluginsCommand("plugins"));
+        commandMap.register("bukkit", new LunarArcPluginsCommand("plugins"));
     }
 }

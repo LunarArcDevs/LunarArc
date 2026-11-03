@@ -55,7 +55,7 @@ public final class CraftEnchantment extends Enchantment implements org.bukkit.cr
 
     @Override @Deprecated
     public @NotNull EnchantmentTarget getItemTarget() {
-        throw new UnsupportedOperationException("Enchantments no longer have a single item target in Minecraft 1.21.1; use supported-item registry sets/tags instead");
+        throw new UnsupportedOperationException("Enchantments no longer have a single item target in Minecraft 1.21.11; use supported-item registry sets/tags instead");
     }
 
     @Override public boolean isTreasure() { return this.handle.is(EnchantmentTags.TREASURE); }
@@ -151,17 +151,22 @@ public final class CraftEnchantment extends Enchantment implements org.bukkit.cr
 
     @Override @Deprecated
     public @NotNull io.papermc.paper.enchantments.EnchantmentRarity getRarity() {
-        throw new UnsupportedOperationException("Enchantments do not have a rarity value in Minecraft 1.21.1");
+        // vanilla replaced rarity by an anvil cost; the old rarities map onto the costs they used to have (1, 2, 4 and 8)
+        int cost = this.getHandle().definition().anvilCost();
+        if (cost >= 8) return io.papermc.paper.enchantments.EnchantmentRarity.VERY_RARE;
+        if (cost >= 4) return io.papermc.paper.enchantments.EnchantmentRarity.RARE;
+        if (cost >= 2) return io.papermc.paper.enchantments.EnchantmentRarity.UNCOMMON;
+        return io.papermc.paper.enchantments.EnchantmentRarity.COMMON;
     }
 
     @Override @Deprecated
     public float getDamageIncrease(int level, @NotNull org.bukkit.entity.EntityCategory entityCategory) {
-        throw new UnsupportedOperationException("Minecraft 1.21.1 enchantment damage is effect-map based and cannot be represented as one fixed increase");
+        throw new UnsupportedOperationException("Minecraft 1.21.11 enchantment damage is effect-map based and cannot be represented as one fixed increase");
     }
 
     @Override @Deprecated
     public float getDamageIncrease(int level, @NotNull org.bukkit.entity.EntityType entityType) {
-        throw new UnsupportedOperationException("Minecraft 1.21.1 enchantment damage is effect-map based and cannot be represented as one fixed increase");
+        throw new UnsupportedOperationException("Minecraft 1.21.11 enchantment damage is effect-map based and cannot be represented as one fixed increase");
     }
 
     @Override

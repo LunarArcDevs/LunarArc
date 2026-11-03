@@ -199,6 +199,9 @@ public final class LunarArcCommandRouter {
     }
 
     private static CommandSourceStack source(CraftServer server, CommandSender sender) {
+        if (sender instanceof io.papermc.paper.commands.FeedbackForwardingSender feedback) {
+            return feedback.asVanilla();
+        }
         if (sender instanceof CraftPlayer player) {
             return player.getHandle().createCommandSourceStack();
         }

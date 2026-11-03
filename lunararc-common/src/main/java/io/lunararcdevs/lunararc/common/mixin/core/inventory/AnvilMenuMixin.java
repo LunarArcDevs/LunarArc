@@ -25,13 +25,12 @@ public abstract class AnvilMenuMixin implements AnvilMenuBridge {
     @Override public boolean lunararc$bypassesEnchantmentLevelRestriction() { return this.lunararc$bypassEnchantmentLevelRestriction; }
     @Override public void lunararc$setBypassEnchantmentLevelRestriction(boolean value) { this.lunararc$bypassEnchantmentLevelRestriction = value; }
 
-    // NeoForge moves the cost and enchantment logic into createResultInternal; vanilla and Forge keep it in createResult.
-    @ModifyConstant(method = {"createResult", "createResultInternal"}, constant = @Constant(intValue = 40), require = 0)
+    @ModifyConstant(method = "createResult", constant = @Constant(intValue = 40), require = 0)
     private int lunararc$maximumRepairCostConstant(int original) {
         return this.lunararc$maximumRepairCost;
     }
 
-    @WrapOperation(method = {"createResult", "createResultInternal"},
+    @WrapOperation(method = "createResult",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/world/item/enchantment/Enchantment;getMaxLevel()I"),
             require = 0)
     private int lunararc$enchantmentMaxLevel(Enchantment enchantment, Operation<Integer> original) {

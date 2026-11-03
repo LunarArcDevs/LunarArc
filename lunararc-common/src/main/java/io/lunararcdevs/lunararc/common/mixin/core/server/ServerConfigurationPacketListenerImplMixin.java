@@ -66,6 +66,26 @@ public abstract class ServerConfigurationPacketListenerImplMixin implements io.l
         return this.configurationTasks;
     }
 
+    @org.spongepowered.asm.mixin.Shadow
+    private void finishCurrentTask(net.minecraft.server.network.ConfigurationTask.Type type) {
+        throw new AssertionError();
+    }
+
+    /**
+     * Keep the configuration task chain on the server thread. Paper's AsyncPlayerConnectionConfigureEvent task runs on its own
+     * "Configuration Thread" pool and finishes itself from there, and finishCurrentTask starts the next task inline. That next
+     * task is the spawn task, which adds chunk tickets and loads spawn chunks, so chunk loading ran off the server thread. Vanilla
+     * tolerates that by luck; C2ME does not and throws "Async update chunks" during join. The call is handed back to the server
+     * thread, where isSameThread() is true, so vanilla's own finishCurrentTask then runs unchanged.
+     */
+    @Inject(method = "finishCurrentTask", at = @At("HEAD"), cancellable = true, require = 0)
+    private void lunararc$finishOnServerThread(net.minecraft.server.network.ConfigurationTask.Type type, CallbackInfo ci) {
+        net.minecraft.server.MinecraftServer server = io.lunararcdevs.lunararc.common.LunarArcServerAccess.getMinecraftServer();
+        if (server == null || server.isSameThread()) return;
+        server.execute(() -> this.finishCurrentTask(type));
+        ci.cancel();
+    }
+
 
     /** The login player already went through PlayerLoginEvent, so skip vanilla's second login check. */
     @WrapOperation(

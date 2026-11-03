@@ -75,4 +75,9 @@ public abstract class MinecraftServerMixin_Forge implements MinecraftServerBridg
     public boolean lunararc$loaderHandlesEntityJoinEvent() {
         return true;
     }
+
+    @Override
+    public boolean lunararc$loaderHandlesEntityTeleportEvent() {
+        return true;
+    }
 }

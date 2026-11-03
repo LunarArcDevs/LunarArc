@@ -640,6 +640,13 @@ public class CraftLivingEntity extends CraftEntity implements LivingEntity {
             charge.setOwner(getHandle());
             charge.shootFromRotation(getHandle(), getHandle().getXRot(), getHandle().getYRot(), 0.0F, 1.5F, 1.0F);
             launch = charge;
+        } else if (org.bukkit.entity.Firework.class.isAssignableFrom(projectile)) {
+            org.bukkit.Location eye = this.getEyeLocation();
+            net.minecraft.world.entity.projectile.FireworkRocketEntity rocket = new net.minecraft.world.entity.projectile.FireworkRocketEntity(
+                    world, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.FIREWORK_ROCKET), getHandle(),
+                    eye.getX(), eye.getY(), eye.getZ(), true);
+            rocket.shootFromRotation(getHandle(), getHandle().getXRot(), getHandle().getYRot(), 0.0F, 0.5F, 1.0F);
+            launch = rocket;
         } else if (org.bukkit.entity.Fireball.class.isAssignableFrom(projectile)) {
             org.bukkit.Location eye = this.getEyeLocation();
             org.bukkit.util.Vector direction = eye.getDirection().multiply(10.0D);
@@ -675,7 +682,7 @@ public class CraftLivingEntity extends CraftEntity implements LivingEntity {
             launch = arrow;
         } else {
             throw new UnsupportedOperationException(
-                    "LunarArc specialized projectile wrapper is not complete yet: " + projectile.getName()
+                    "This entity cannot launch projectiles of type " + projectile.getName()
             );
         }
 

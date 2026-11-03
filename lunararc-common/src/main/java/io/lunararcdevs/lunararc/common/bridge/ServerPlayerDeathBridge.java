@@ -16,4 +16,7 @@ public interface ServerPlayerDeathBridge {
 
     java.util.List<net.minecraft.world.item.ItemStack> lunararc$getDeathInventoryState();
     void lunararc$setDeathInventoryState(java.util.List<net.minecraft.world.item.ItemStack> state);
+
+    /** Player#dropEquipment hands its Inventory#dropAll here during a PlayerDeathEvent; false lets vanilla drop as usual. */
+    boolean lunararc$dropDeathItems(Runnable dropAll);
 }

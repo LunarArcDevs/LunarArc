@@ -56,36 +56,89 @@ public final class CraftMenuType<V extends InventoryView, B extends org.bukkit.i
     @Override
     @SuppressWarnings("unchecked")
     public @NotNull B builder() {
-        return (B) new ViewBuilder<V>(this, null);
+        if (handle == MenuType.MERCHANT) return (B) new MerchantBuilder<V>(this, null, false, null);
+        return (B) new LocationBuilder<V>(this, null, false, null);
     }
 
     @Override public @NotNull V create(@NotNull HumanEntity player, @Nullable String title) {
         return create(player, title == null ? null : LegacyComponentSerializer.legacySection().deserialize(title));
     }
 
-    /** Minimal Paper-style view builder: carries the optional title, then opens the menu through {@link #create}. */
-    private record ViewBuilder<V extends InventoryView>(CraftMenuType<V, ?> type, @Nullable Component title)
-            implements org.bukkit.inventory.view.builder.InventoryViewBuilder<V> {
-        @Override public org.bukkit.inventory.view.builder.InventoryViewBuilder<V> copy() { return new ViewBuilder<>(type, title); }
-        @Override public org.bukkit.inventory.view.builder.InventoryViewBuilder<V> title(@Nullable Component title) { return new ViewBuilder<>(type, title); }
-        @Override public V build(HumanEntity player) { return type.create(player, title); }
+    /** Paper-style builder for menus that can be tied to a block position (anvil, crafting table, furnaces and the rest). */
+    private record LocationBuilder<V extends InventoryView>(CraftMenuType<V, ?> type, @Nullable Component title, boolean checkReachable,
+            @Nullable org.bukkit.Location location) implements org.bukkit.inventory.view.builder.LocationInventoryViewBuilder<V> {
+        @Override public org.bukkit.inventory.view.builder.LocationInventoryViewBuilder<V> copy() { return new LocationBuilder<>(type, title, checkReachable, location); }
+        @Override public org.bukkit.inventory.view.builder.LocationInventoryViewBuilder<V> title(@Nullable Component title) { return new LocationBuilder<>(type, title, checkReachable, location); }
+        @Override public org.bukkit.inventory.view.builder.LocationInventoryViewBuilder<V> checkReachable(boolean checkReachable) { return new LocationBuilder<>(type, title, checkReachable, location); }
+        @Override public org.bukkit.inventory.view.builder.LocationInventoryViewBuilder<V> location(org.bukkit.Location location) { return new LocationBuilder<>(type, title, checkReachable, location); }
+        @Override public V build(HumanEntity player) { return type.buildView(player, title, location, checkReachable, null); }
+    }
+
+    /** Paper-style builder for the merchant menu: the merchant being traded with is part of the menu. */
+    private record MerchantBuilder<V extends InventoryView>(CraftMenuType<V, ?> type, @Nullable Component title, boolean checkReachable,
+            @Nullable org.bukkit.inventory.Merchant merchant) implements org.bukkit.inventory.view.builder.MerchantInventoryViewBuilder<V> {
+        @Override public org.bukkit.inventory.view.builder.MerchantInventoryViewBuilder<V> copy() { return new MerchantBuilder<>(type, title, checkReachable, merchant); }
+        @Override public org.bukkit.inventory.view.builder.MerchantInventoryViewBuilder<V> title(@Nullable Component title) { return new MerchantBuilder<>(type, title, checkReachable, merchant); }
+        @Override public org.bukkit.inventory.view.builder.MerchantInventoryViewBuilder<V> merchant(org.bukkit.inventory.Merchant merchant) { return new MerchantBuilder<>(type, title, checkReachable, merchant); }
+        @Override public org.bukkit.inventory.view.builder.MerchantInventoryViewBuilder<V> checkReachable(boolean checkReachable) { return new MerchantBuilder<>(type, title, checkReachable, merchant); }
+        @Override public V build(HumanEntity player) { return type.buildView(player, title, null, checkReachable, merchant); }
     }
 
     @Override
     public @NotNull V create(@NotNull HumanEntity player, @Nullable Component title) {
+        return buildView(player, title, null, false, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private V buildView(HumanEntity player, @Nullable Component title, @Nullable org.bukkit.Location location, boolean checkReachable,
+            @Nullable org.bukkit.inventory.Merchant merchant) {
         if (title == null) title = Component.empty();
         if (!(player instanceof org.bukkit.craftbukkit.entity.CraftPlayer craftPlayer)) {
             throw new IllegalArgumentException("The given player must be a CraftPlayer");
         }
         ServerPlayer sp = craftPlayer.getHandle();
         int containerId = ((io.lunararcdevs.lunararc.common.bridge.ServerPlayerInventoryBridge) sp).lunararc$nextContainerCounter();
-        AbstractContainerMenu menu = handle.create(containerId, sp.getInventory());
-        ((io.lunararcdevs.lunararc.common.bridge.AbstractContainerMenuBridge) menu).lunararc$setCheckReachable(false);
-        InventoryType type = inferType(menu);
-        InventoryView view = new CraftInventoryView(craftPlayer, menu, null, null, type, title);
-        @SuppressWarnings("unchecked")
-        V result = (V) view;
-        return result;
+        AbstractContainerMenu menu;
+        if (merchant != null) {
+            if (handle != MenuType.MERCHANT) throw new IllegalArgumentException("Only the merchant menu takes a merchant");
+            menu = new net.minecraft.world.inventory.MerchantMenu(containerId, sp.getInventory(), nmsMerchant(merchant));
+        } else {
+            net.minecraft.world.inventory.ContainerLevelAccess access = net.minecraft.world.inventory.ContainerLevelAccess.NULL;
+            if (location != null) {
+                if (!(location.getWorld() instanceof org.bukkit.craftbukkit.CraftWorld world)) {
+                    throw new IllegalArgumentException("The location must be in a loaded world");
+                }
+                access = net.minecraft.world.inventory.ContainerLevelAccess.create(world.getHandle(),
+                        new net.minecraft.core.BlockPos(location.getBlockX(), location.getBlockY(), location.getBlockZ()));
+            }
+            menu = createMenu(containerId, sp, access);
+        }
+        ((io.lunararcdevs.lunararc.common.bridge.AbstractContainerMenuBridge) menu).lunararc$setCheckReachable(checkReachable);
+        InventoryView view = org.bukkit.craftbukkit.event.CraftEventFactory.createInventoryView(sp, menu, title);
+        if (view == null) view = new CraftInventoryView(craftPlayer, menu, null, null, inferType(menu), title);
+        return (V) view;
+    }
+
+    /** Menus that read a block position are built with a level access; the rest come from the menu type's own factory. */
+    private AbstractContainerMenu createMenu(int id, ServerPlayer player, net.minecraft.world.inventory.ContainerLevelAccess access) {
+        net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
+        if (access != net.minecraft.world.inventory.ContainerLevelAccess.NULL) {
+            if (handle == MenuType.ANVIL) return new net.minecraft.world.inventory.AnvilMenu(id, inventory, access);
+            if (handle == MenuType.CRAFTING) return new net.minecraft.world.inventory.CraftingMenu(id, inventory, access);
+            if (handle == MenuType.ENCHANTMENT) return new net.minecraft.world.inventory.EnchantmentMenu(id, inventory, access);
+            if (handle == MenuType.GRINDSTONE) return new net.minecraft.world.inventory.GrindstoneMenu(id, inventory, access);
+            if (handle == MenuType.LOOM) return new net.minecraft.world.inventory.LoomMenu(id, inventory, access);
+            if (handle == MenuType.CARTOGRAPHY_TABLE) return new net.minecraft.world.inventory.CartographyTableMenu(id, inventory, access);
+            if (handle == MenuType.SMITHING) return new net.minecraft.world.inventory.SmithingMenu(id, inventory, access);
+            if (handle == MenuType.STONECUTTER) return new net.minecraft.world.inventory.StonecutterMenu(id, inventory, access);
+        }
+        return handle.create(id, inventory);
+    }
+
+    private static net.minecraft.world.item.trading.Merchant nmsMerchant(org.bukkit.inventory.Merchant merchant) {
+        if (merchant instanceof CraftMerchant craft) return craft.getMerchant();
+        if (merchant instanceof org.bukkit.craftbukkit.entity.CraftAbstractVillager villager) return villager.getMerchant();
+        throw new IllegalArgumentException("Unsupported merchant implementation: " + merchant.getClass().getName());
     }
 
     private static InventoryType inferType(AbstractContainerMenu menu) {

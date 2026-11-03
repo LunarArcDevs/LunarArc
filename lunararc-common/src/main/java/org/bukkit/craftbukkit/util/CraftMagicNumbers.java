@@ -957,7 +957,7 @@ public final class CraftMagicNumbers implements UnsafeValues {
                 Identifier.parse(entityType.getKey().toString()));
         if (nmsType == null) return null;
         net.minecraft.world.item.SpawnEggItem egg = net.minecraft.world.item.SpawnEggItem.byId(nmsType);
-        if (egg != null) throw new UnsupportedOperationException();
+        // spawn egg colours moved out of the item into client resources in 1.21.5, so there is no colour to report
         return null;
     }
 

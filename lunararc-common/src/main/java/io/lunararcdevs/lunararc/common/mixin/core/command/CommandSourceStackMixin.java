@@ -56,7 +56,7 @@ public abstract class CommandSourceStackMixin
         // Vanilla also builds command requirements against a source with no sender (CommandSource.NULL) while it sends a player the
         // command tree; treat that as the console instead of failing every command check once per registered command.
         if (this.source == net.minecraft.commands.CommandSource.NULL) {
-            return LunarArcServerAccess.getCraftServer(this.getLevel().getServer()).getConsoleSender();
+            return LunarArcServerAccess.getCraftServer().getConsoleSender();
         }
 
         throw new IllegalStateException("Unsupported command source: " + this.source.getClass().getName());

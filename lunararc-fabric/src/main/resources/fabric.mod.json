@@ -30,7 +30,6 @@
   "depends": {
     "fabricloader": ">=${fabric_loader}",
     "minecraft": "${minecraft}",
-    "java": ">=${java_runtime}",
-    "fabric-api": "*"
+    "java": ">=${java_runtime}"
   }
 }

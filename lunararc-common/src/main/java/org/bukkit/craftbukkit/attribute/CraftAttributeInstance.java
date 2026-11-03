@@ -159,7 +159,7 @@ public class CraftAttributeInstance implements org.bukkit.attribute.AttributeIns
             }
             throw new NoSuchMethodException("AttributeModifier(Identifier,double,Operation)");
         } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Unable to convert Bukkit AttributeModifier to Minecraft 1.21.1", e);
+            throw new IllegalStateException("Unable to convert Bukkit AttributeModifier to Minecraft 1.21.11", e);
         }
     }
 
@@ -178,7 +178,7 @@ public class CraftAttributeInstance implements org.bukkit.attribute.AttributeIns
             };
             return new AttributeModifier(key, amount, bukkitOperation, EquipmentSlotGroup.ANY);
         } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Unable to convert Minecraft 1.21.1 AttributeModifier", e);
+            throw new IllegalStateException("Unable to convert Minecraft 1.21.11 AttributeModifier", e);
         }
     }
 

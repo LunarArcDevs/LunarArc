@@ -445,7 +445,7 @@ public class CraftWorld implements World {
 
     @Override
     public boolean regenerateChunk(int x, int z) {
-        throw new UnsupportedOperationException("Chunk regeneration is not supported in Minecraft 1.21.1");
+        throw new UnsupportedOperationException("Chunk regeneration is not supported in Minecraft 1.21.11");
     }
 
     @Override
@@ -1829,7 +1829,8 @@ public class CraftWorld implements World {
         net.minecraft.world.attribute.BedRule bedRule = world.environmentAttributes().getDimensionValue(net.minecraft.world.attribute.EnvironmentAttributes.BED_RULE);
         return !bedRule.explodes() && bedRule.canSleep().test(world);
     }
-    @Override public boolean isNatural() { throw new UnsupportedOperationException("Dimension natural flag no longer exists in 1.21.11"); }
+    // the dimension "natural" flag no longer exists in 1.21.11; the overworld type is the closest equivalent
+    @Override public boolean isNatural() { return this.getEnvironment() == Environment.NORMAL; }
     @Override public int getLogicalHeight() { return world.dimensionType().logicalHeight(); }
 
     @Override

@@ -1,8 +1,6 @@
 package com.destroystokyo.paper.profile;
 
 import org.bukkit.craftbukkit.profile.CraftPlayerTextures;
-import com.destroystokyo.paper.profile.PlayerProfile;
-import com.destroystokyo.paper.profile.ProfileProperty;
 import org.bukkit.profile.PlayerTextures;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;

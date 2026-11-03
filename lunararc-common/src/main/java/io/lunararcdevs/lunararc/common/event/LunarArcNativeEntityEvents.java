@@ -62,6 +62,16 @@ public final class LunarArcNativeEntityEvents {
 
         return TeleportResult.pass(to.getX(), to.getY(), to.getZ());
     }
+    
+    public static TeleportResult fireForLoaderWithoutEvent(Entity entity, double x, double y, double z, PlayerTeleportEvent.TeleportCause cause) {
+        if (entity == null || !org.bukkit.Bukkit.isPrimaryThread() || !(entity.level() instanceof net.minecraft.server.level.ServerLevel level)) {
+            return null;
+        }
+        io.lunararcdevs.lunararc.common.bridge.MinecraftServerBridge bridge =
+                (io.lunararcdevs.lunararc.common.bridge.MinecraftServerBridge) (Object) level.getServer();
+        if (bridge.lunararc$loaderHandlesEntityTeleportEvent()) return null;
+        return fireNativeTeleport(entity, x, y, z, cause);
+    }
 
     public record TeleportResult(boolean cancelled, double x, double y, double z) {
         public static TeleportResult pass(double x, double y, double z) {

@@ -50,6 +50,9 @@ public interface MinecraftServerBridge {
     /** True when the active loader has a cancellable fresh-entity join event. */
     default boolean lunararc$loaderHandlesEntityJoinEvent() { return false; }
 
+    /** True when the active loader has a native cancellable teleport event for ender pearls, chorus fruit and /tp. */
+    default boolean lunararc$loaderHandlesEntityTeleportEvent() { return false; }
+
     /** Forge registry lifecycle boundary used around dynamic world/plugin phases. */
     default void lunararc$loaderLockRegistries() {}
 

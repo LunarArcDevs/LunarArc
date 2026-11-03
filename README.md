@@ -16,7 +16,7 @@ LunarArc also provides native [EssentialsX](https://essentialsx.net) integration
 
 |        Release        |  Forge  | NeoForge |  Fabric  |  QuiltMC  | Status |                                                                                                                                              Build                                                           
 |:--------------------:|:-------:|:--------:|:--------:|:--------:|:------:|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|
-| Mobs of Mayhem (1.21.11) | 61.2.4 | 21.11.48 |  0.20.1  |  0.30.1  | ACTIVE | [![1.21.11 Status](https://img.shields.io/github/actions/workflow/status/LunarArcDevs/LunarArc/gradle.yml?branch=MobsofMayhem&style=for-the-badge)](https://github.com/LunarArcDevs/LunarArc/actions?query=branch%3AMobsofMayhem) |
+| Mobs of Mayhem (1.21.11) | 61.2.4 | 21.11.48 |  0.20.1  |  0.30.2  | ACTIVE | [![1.21.11 Status](https://img.shields.io/github/actions/workflow/status/LunarArcDevs/LunarArc/gradle.yml?branch=MobsofMayhem&style=for-the-badge)](https://github.com/LunarArcDevs/LunarArc/actions?query=branch%3AMobsofMayhem) |
 
 ---
 

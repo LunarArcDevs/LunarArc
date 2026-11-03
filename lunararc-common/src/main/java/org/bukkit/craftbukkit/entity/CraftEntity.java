@@ -224,6 +224,7 @@ public abstract class CraftEntity implements org.bukkit.entity.Entity {
             return new CraftAnimals(server, animal);
         }
         if (entity instanceof net.minecraft.world.entity.AgeableMob ageable) {
+            if (entity instanceof net.minecraft.world.item.trading.Merchant) return new CraftModdedMerchant(server, ageable);
             return new CraftAgeable(server, ageable);
         }
         if (entity instanceof net.minecraft.world.entity.PathfinderMob creature) {
@@ -791,7 +792,7 @@ public abstract class CraftEntity implements org.bukkit.entity.Entity {
             entity.setPose(net.minecraft.world.entity.Pose.valueOf(pose.name()));
             fixedPose = fixed;
         } catch (IllegalArgumentException ex) {
-            throw new IllegalArgumentException("Unsupported pose for Minecraft 1.21.1: " + pose, ex);
+            throw new IllegalArgumentException("Unsupported pose for Minecraft 1.21.11: " + pose, ex);
         }
     }
     @Override public void setSneaking(boolean sneak) { entity.setShiftKeyDown(sneak); }

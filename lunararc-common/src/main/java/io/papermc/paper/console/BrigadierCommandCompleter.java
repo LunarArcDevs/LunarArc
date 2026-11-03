@@ -35,5 +35,36 @@ public class BrigadierCommandCompleter {
                     : net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(completion.tooltip());
             candidates.add(new Candidate(value, value, null, tooltip, null, null, false));
         }
+        this.fireTabCompleteEvent(line, candidates);
+    }
+
+    /** Bukkit's TabCompleteEvent for the console: plugins may remove or add completions, or cancel them. */
+    private void fireTabCompleteEvent(ParsedLine line, List<Candidate> candidates) {
+        if (org.bukkit.event.server.TabCompleteEvent.getHandlerList().getRegisteredListeners().length == 0 || org.bukkit.Bukkit.getServer() == null) return;
+        List<String> values = new java.util.ArrayList<>(candidates.size());
+        for (Candidate candidate : candidates) values.add(candidate.value());
+        org.bukkit.event.server.TabCompleteEvent event;
+        try {
+            // plugins expect the event on the server thread, not on the console reader thread
+            event = server.submit(() -> {
+                org.bukkit.event.server.TabCompleteEvent fired = new org.bukkit.event.server.TabCompleteEvent(
+                        org.bukkit.Bukkit.getConsoleSender(), line.line(), values);
+                org.bukkit.Bukkit.getPluginManager().callEvent(fired);
+                return fired;
+            }).join();
+        } catch (RuntimeException failure) {
+            return;
+        }
+        if (event.isCancelled()) {
+            candidates.clear();
+            return;
+        }
+        java.util.Set<String> kept = new java.util.HashSet<>(event.getCompletions());
+        candidates.removeIf(candidate -> !kept.contains(candidate.value()));
+        java.util.Set<String> present = new java.util.HashSet<>();
+        for (Candidate candidate : candidates) present.add(candidate.value());
+        for (String added : event.getCompletions()) {
+            if (!added.isEmpty() && present.add(added)) candidates.add(new Candidate(added, added, null, null, null, null, false));
+        }
     }
 }

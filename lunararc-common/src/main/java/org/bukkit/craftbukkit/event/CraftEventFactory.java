@@ -237,18 +237,39 @@ public class CraftEventFactory {
                 : null;
         ItemStack item = player != null ? CraftItemStack.asBukkitCopy(player.getItemInHand(hand)) : null;
 
-        org.bukkit.event.block.BlockPlaceEvent event = new org.bukkit.event.block.BlockPlaceEvent(block,
-                block.getState(), block, item, bukkitPlayer, true, org.bukkit.inventory.EquipmentSlot.HAND);
+        org.bukkit.event.block.BlockPlaceEvent event = newPlaceEvent(world, pos, newState, block, block.getState(), item, bukkitPlayer,
+                org.bukkit.inventory.EquipmentSlot.HAND);
         Bukkit.getPluginManager().callEvent(event);
         return event;
     }
 
-    /**
-     * Loader-native block placement bridge. Forge/NeoForge provide a snapshot of the
-     * state that existed before placement; use it directly instead of calling
-     * block.getState() after a modded block entity has been created. This mirrors the
-     * information Paper's placement transaction supplies while keeping loader-owned NMS.
-     */
+    /** The other block a multi-block item (bed, door, tall plant) is about to place, or null for a single block. */
+    private static net.minecraft.core.BlockPos otherPlacedHalf(net.minecraft.core.BlockPos pos, net.minecraft.world.level.block.state.BlockState state) {
+        if (state == null) return null;
+        net.minecraft.world.level.block.Block placed = state.getBlock();
+        if (placed instanceof net.minecraft.world.level.block.BedBlock) {
+            return pos.relative(state.getValue(net.minecraft.world.level.block.BedBlock.FACING));
+        }
+        if (placed instanceof net.minecraft.world.level.block.DoorBlock || placed instanceof net.minecraft.world.level.block.DoublePlantBlock) {
+            return pos.above();
+        }
+        return null;
+    }
+
+    /** BlockMultiPlaceEvent (which extends BlockPlaceEvent) for beds, doors and tall plants, a plain BlockPlaceEvent otherwise. */
+    private static org.bukkit.event.block.BlockPlaceEvent newPlaceEvent(net.minecraft.server.level.ServerLevel world, net.minecraft.core.BlockPos pos,
+            net.minecraft.world.level.block.state.BlockState newState, org.bukkit.block.Block block, org.bukkit.block.BlockState replaced,
+            ItemStack item, org.bukkit.entity.Player player, org.bukkit.inventory.EquipmentSlot slot) {
+        net.minecraft.core.BlockPos other = otherPlacedHalf(pos, newState);
+        if (other != null) {
+            // the second half is placed after this event, so its current state is the one being replaced
+            java.util.List<org.bukkit.block.BlockState> replacedStates = java.util.List.of(replaced,
+                    org.bukkit.craftbukkit.block.CraftBlockStates.getBlockState(world, other));
+            return new org.bukkit.event.block.BlockMultiPlaceEvent(replacedStates, block, item, player, true, slot);
+        }
+        return new org.bukkit.event.block.BlockPlaceEvent(block, replaced, block, item, player, true, slot);
+    }
+
     public static org.bukkit.event.block.BlockPlaceEvent callBlockPlaceEvent(
             net.minecraft.server.level.ServerLevel world, net.minecraft.core.BlockPos pos,
             net.minecraft.server.level.ServerPlayer player, net.minecraft.world.InteractionHand hand,
@@ -271,8 +292,7 @@ public class CraftEventFactory {
                 org.bukkit.craftbukkit.block.CraftBlockStates.getBlockState(
                         block.getWorld(), pos, replacedState, replacedTileEntity);
 
-        org.bukkit.event.block.BlockPlaceEvent event = new org.bukkit.event.block.BlockPlaceEvent(
-                block, bukkitReplacedState, block, item, bukkitPlayer, true,
+        org.bukkit.event.block.BlockPlaceEvent event = newPlaceEvent(world, pos, newState, block, bukkitReplacedState, item, bukkitPlayer,
                 hand == net.minecraft.world.InteractionHand.OFF_HAND
                         ? org.bukkit.inventory.EquipmentSlot.OFF_HAND
                         : org.bukkit.inventory.EquipmentSlot.HAND);
@@ -610,7 +630,10 @@ public class CraftEventFactory {
             type = org.bukkit.event.inventory.InventoryType.GRINDSTONE;
             top = new org.bukkit.craftbukkit.inventory.CraftGrindstoneInventory(grindstone, craftPlayer);
         }
-        else if (menu instanceof net.minecraft.world.inventory.CartographyTableMenu) type = org.bukkit.event.inventory.InventoryType.CARTOGRAPHY;
+        else if (menu instanceof net.minecraft.world.inventory.CartographyTableMenu cartography) {
+            type = org.bukkit.event.inventory.InventoryType.CARTOGRAPHY;
+            top = new org.bukkit.craftbukkit.inventory.CraftCartographyInventory(cartography, craftPlayer);
+        }
         else if (menu instanceof net.minecraft.world.inventory.StonecutterMenu) type = org.bukkit.event.inventory.InventoryType.STONECUTTER;
         else if (menu instanceof net.minecraft.world.inventory.ChestMenu) type = org.bukkit.event.inventory.InventoryType.CHEST;
         else type = org.bukkit.event.inventory.InventoryType.CHEST;

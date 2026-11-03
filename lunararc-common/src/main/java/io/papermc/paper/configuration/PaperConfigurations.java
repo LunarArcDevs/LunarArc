@@ -138,6 +138,31 @@ public final class PaperConfigurations {
         tuning.nonPlayerArrowDespawnRate = lenientRate(config, "entities.spawning.non-player-arrow-despawn-rate");
         tuning.creativeArrowDespawnRate = lenientRate(config, "entities.spawning.creative-arrow-despawn-rate");
         tuning.hopperDisableMoveEvent = lenientBool(config, "hopper.disable-move-event", false);
+        tuning.disableThunder = lenientBool(config, "environment.disable-thunder", false);
+        tuning.disableIceAndSnow = lenientBool(config, "environment.disable-ice-and-snow", false);
+        tuning.disableChestCatDetection = lenientBool(config, "entities.behavior.disable-chest-cat-detection", false);
+        tuning.maxEntityCollisions = lenientInt(config, "collisions.max-entity-collisions", 8);
+        tuning.onlyPlayersCollide = lenientBool(config, "collisions.only-players-collide", false);
+        tuning.allowPlayerCrammingDamage = lenientBool(config, "collisions.allow-player-cramming-damage", false);
+        tuning.fallingBlockHeightNerf = lenientDisabledInt(config, "fixes.falling-block-height-nerf");
+        tuning.tntEntityHeightNerf = lenientDisabledInt(config, "fixes.tnt-entity-height-nerf");
+        tuning.fixItemsMergingThroughWalls = lenientBool(config, "fixes.fix-items-merging-through-walls", false);
+        tuning.disablePlayerCrits = lenientBool(config, "entities.behavior.disable-player-crits", false);
+        tuning.disableCreeperLingeringEffect = lenientBool(config, "entities.behavior.disable-creeper-lingering-effect", false);
+        tuning.disableSprintInterruptionOnAttack = lenientBool(config, "misc.disable-sprint-interruption-on-attack", false);
+        tuning.voidDamageAmount = lenientDouble(config, "environment.void-damage-amount", 4.0D);
+        tuning.voidDamageMinBuildHeightOffset = lenientDouble(config, "environment.void-damage-min-build-height-offset", -64.0D);
+        tuning.portalSearchRadius = lenientInt(config, "environment.portal-search-radius", 128);
+        tuning.portalSearchVanillaDimensionScaling = lenientBool(config, "environment.portal-search-vanilla-dimension-scaling", true);
+        tuning.maxGrowthHeightCactus = lenientInt(config, "max-growth-height.cactus", 3);
+        tuning.maxGrowthHeightReeds = lenientInt(config, "max-growth-height.reeds", 3);
+        tuning.allChunksAreSlimeChunks = lenientBool(config, "entities.spawning.all-chunks-are-slime-chunks", false);
+        tuning.allowVehicleCollisions = lenientBool(config, "collisions.allow-vehicle-collisions", true);
+        tuning.fishingTimeMin = lenientInt(config, "fishing-time-range.minimum", 100);
+        tuning.fishingTimeMax = lenientInt(config, "fishing-time-range.maximum", 600);
+        tuning.snifferHatchTime = lenientInt(config, "entities.sniffer.hatch-time", 24000);
+        tuning.snifferBoostedHatchTime = lenientInt(config, "entities.sniffer.boosted-hatch-time", 12000);
+        tuning.zombiesTargetTurtleEggs = lenientBool(config, "entities.behavior.zombies-target-turtle-eggs", true);
         tuning.armorStandTick = lenientBool(config, "entities.armor-stands.tick", true);
         tuning.piglinsGuardChests = lenientBool(config, "entities.behavior.piglins-guard-chests", true);
         tuning.pillagerPatrolsDisabled = lenientBool(config, "entities.behavior.pillager-patrols.disable", false);
@@ -160,6 +185,12 @@ public final class PaperConfigurations {
         tuning.dryFarmlandRate = lenientInt(config, "tick-rates.dry-farmland", 1);
         tuning.wetFarmlandRate = lenientInt(config, "tick-rates.wet-farmland", 1);
         tuning.nerfPigmenFromNetherPortals = lenientBool(config, "entities.behavior.nerf-pigmen-from-nether-portals", false);
+    }
+
+    /** Paper's "number or disabled" options: a number is used as is, the word disabled (or anything else) means off, stored as 0. */
+    private static int lenientDisabledInt(YamlConfiguration config, String key) {
+        Object value = config.get(key);
+        return value instanceof Number number ? number.intValue() : 0;
     }
 
     private static boolean lenientBool(YamlConfiguration config, String key, boolean fallback) {

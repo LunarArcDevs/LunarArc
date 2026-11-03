@@ -9,18 +9,16 @@ import io.lunararcdevs.lunararc.common.server.LunarArcProfileServices;
 import net.minecraft.server.Services;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-
-/** Profile lookup and fill events: the services the server talks to Mojang through are wrapped as they are created. */
 @Mixin(Services.class)
 public abstract class ServerSideProfileServicesMixin {
     @WrapOperation(method = "create", require = 0,
-            at = @At(value = "INVOKE", target = "Lcom/mojang/authlib/yggdrasil/YggdrasilAuthenticationService;createProfileRepository()Lcom/mojang/authlib/GameProfileRepository;"))
+            at = @At(value = "INVOKE", target = "Lcom/mojang/authlib/yggdrasil/YggdrasilAuthenticationService;createProfileRepository()Lcom/mojang/authlib/GameProfileRepository;", remap = false))
     private static GameProfileRepository lunararc$repository(YggdrasilAuthenticationService service, Operation<GameProfileRepository> original) {
         return LunarArcProfileServices.wrap(original.call(service));
     }
 
     @WrapOperation(method = "create", require = 0,
-            at = @At(value = "INVOKE", target = "Lcom/mojang/authlib/yggdrasil/YggdrasilAuthenticationService;createMinecraftSessionService()Lcom/mojang/authlib/minecraft/MinecraftSessionService;"))
+            at = @At(value = "INVOKE", target = "Lcom/mojang/authlib/yggdrasil/YggdrasilAuthenticationService;createMinecraftSessionService()Lcom/mojang/authlib/minecraft/MinecraftSessionService;", remap = false))
     private static MinecraftSessionService lunararc$session(YggdrasilAuthenticationService service, Operation<MinecraftSessionService> original) {
         return LunarArcProfileServices.wrap(original.call(service));
     }
